@@ -1,0 +1,3 @@
+[D-Bus Service]
+Name=io.github.cosboard.Cosboard
+Exec=/usr/bin/cosboard

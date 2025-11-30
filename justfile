@@ -1,7 +1,11 @@
 # Name of the application's binary.
 name := 'cosboard'
+# Name of the applet binary.
+applet-name := 'cosboard-applet'
 # The unique ID of the application.
 appid := 'io.github.cosboard.Cosboard'
+# The unique ID of the applet.
+applet-appid := appid + '.Applet'
 
 # Path to root file system, which defaults to `/`.
 rootdir := ''
@@ -14,16 +18,23 @@ cargo-target-dir := env('CARGO_TARGET_DIR', 'target')
 appdata := appid + '.metainfo.xml'
 # Application's desktop entry
 desktop := appid + '.desktop'
+# Applet's desktop entry
+applet-desktop := applet-appid + '.desktop'
 # Application's icon.
 icon-svg := appid + '.svg'
+# D-Bus service file
+dbus-service := appid + '.service'
 
 # Install destinations
 base-dir := absolute_path(clean(rootdir / prefix))
 appdata-dst := base-dir / 'share' / 'appdata' / appdata
 bin-dst := base-dir / 'bin' / name
+applet-bin-dst := base-dir / 'bin' / applet-name
 desktop-dst := base-dir / 'share' / 'applications' / desktop
+applet-desktop-dst := base-dir / 'share' / 'applications' / applet-desktop
 icons-dst := base-dir / 'share' / 'icons' / 'hicolor'
 icon-svg-dst := icons-dst / 'scalable' / 'apps' / icon-svg
+dbus-service-dst := base-dir / 'share' / 'dbus-1' / 'services' / dbus-service
 
 # Default recipe which runs `just build-release`
 default: build-release
@@ -63,13 +74,16 @@ run *args:
 # Installs files
 install:
     install -Dm0755 {{ cargo-target-dir / 'release' / name }} {{bin-dst}}
+    install -Dm0755 {{ cargo-target-dir / 'release' / applet-name }} {{applet-bin-dst}}
     install -Dm0644 {{ 'resources' / desktop }} {{desktop-dst}}
+    install -Dm0644 {{ 'resources' / applet-desktop }} {{applet-desktop-dst}}
     install -Dm0644 {{ 'resources' / appdata }} {{appdata-dst}}
     install -Dm0644 {{ 'resources' / 'icons' / 'hicolor' / 'scalable' / 'apps' / icon-svg }} {{icon-svg-dst}}
+    install -Dm0644 {{ 'resources' / dbus-service }} {{dbus-service-dst}}
 
 # Uninstalls installed files
 uninstall:
-    rm -f {{bin-dst}} {{desktop-dst}} {{appdata-dst}} {{icon-svg-dst}}
+    rm -f {{bin-dst}} {{applet-bin-dst}} {{desktop-dst}} {{applet-desktop-dst}} {{appdata-dst}} {{icon-svg-dst}} {{dbus-service-dst}}
 
 # Vendor dependencies locally
 vendor:

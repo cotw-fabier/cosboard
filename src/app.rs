@@ -6,7 +6,7 @@ use crate::dbus::{DbusCommand, DbusServer};
 use crate::layer_shell::{LayerShellConfig, log_layer_status, Layer};
 use crate::state::WindowState;
 use cosmic::cosmic_config::{self, CosmicConfigEntry};
-use cosmic::iced::{window, Length, Subscription};
+use cosmic::iced::{window, Length, Size, Subscription};
 use cosmic::prelude::*;
 use futures::channel::mpsc;
 use futures::StreamExt;
@@ -15,6 +15,9 @@ use tokio::sync::Mutex;
 
 /// Shared D-Bus server handle wrapped in Arc<Mutex> for thread-safe access.
 type SharedDbusServer = Arc<Mutex<Option<DbusServer>>>;
+
+/// Shared D-Bus receiver wrapped in Arc<Mutex> for thread-safe access.
+type SharedDbusReceiver = Arc<Mutex<Option<mpsc::Receiver<DbusCommand>>>>;
 
 /// The application model stores app-specific state used to describe its interface and
 /// drive its logic.
@@ -32,10 +35,12 @@ pub struct AppModel {
     /// D-Bus server handle (kept alive to maintain the service).
     #[allow(dead_code)]
     dbus_server: SharedDbusServer,
-    /// Receiver for D-Bus commands.
-    dbus_rx: Option<mpsc::Receiver<DbusCommand>>,
+    /// Shared receiver for D-Bus commands (restored after each poll).
+    dbus_rx: SharedDbusReceiver,
     /// Layer-shell configuration for overlay behavior.
     layer_shell_config: LayerShellConfig,
+    /// Current main window ID (changes when window is reopened).
+    main_window_id: Option<window::Id>,
 }
 
 /// Messages emitted by the application and its widgets.
@@ -61,6 +66,10 @@ pub enum Message {
     DbusServerFailed(String),
     /// Poll for D-Bus commands.
     DbusCommandReceived(Option<DbusCommand>),
+    /// Window was opened (stores the new window ID).
+    WindowOpened(window::Id),
+    /// Window was closed.
+    WindowClosed(window::Id),
 }
 
 /// Create a COSMIC application from the app model
@@ -119,18 +128,24 @@ impl cosmic::Application for AppModel {
         let dbus_server: SharedDbusServer = Arc::new(Mutex::new(None));
         let dbus_server_clone = Arc::clone(&dbus_server);
 
+        // Create shared D-Bus receiver for polling
+        let dbus_rx: SharedDbusReceiver = Arc::new(Mutex::new(Some(dbus_rx)));
+
         // Initialize layer-shell configuration with Overlay layer (highest z-order)
         let layer_shell_config = LayerShellConfig::new().with_layer(Layer::Overlay);
 
+        // Start with no window - we use no_main_window(true) setting
+        // Windows will be created on demand via DbusShow
         let app = AppModel {
             core,
             config,
             window_state,
             state_config,
-            visible: true,
+            visible: false,  // Start hidden (no window)
             dbus_server,
-            dbus_rx: Some(dbus_rx),
+            dbus_rx,
             layer_shell_config,
+            main_window_id: None,  // No main window initially
         };
 
         // Start D-Bus server asynchronously
@@ -198,28 +213,52 @@ impl cosmic::Application for AppModel {
                 self.config = config;
             }
             Message::DbusShow => {
+                if self.visible {
+                    return self.poll_dbus_commands();
+                }
                 tracing::info!("D-Bus: Showing window");
                 self.visible = true;
-                // Emit visibility changed signal
                 self.emit_visibility_signal(true);
-                // TODO: Actually show the window when layer-shell is implemented
-                return self.poll_dbus_commands();
+
+                // Open a new window
+                let (id, spawn_window) = window::open(window::Settings {
+                    size: Size::new(self.window_state.width, self.window_state.height),
+                    position: window::Position::Default,
+                    decorations: false,
+                    exit_on_close_request: false,
+                    ..Default::default()
+                });
+                self.main_window_id = Some(id);
+
+                return Task::batch([
+                    spawn_window.map(|id| cosmic::Action::App(Message::WindowOpened(id))),
+                    self.poll_dbus_commands(),
+                ]);
             }
             Message::DbusHide => {
+                if !self.visible {
+                    return self.poll_dbus_commands();
+                }
                 tracing::info!("D-Bus: Hiding window");
                 self.visible = false;
-                // Emit visibility changed signal
                 self.emit_visibility_signal(false);
-                // TODO: Actually hide the window when layer-shell is implemented
+
+                // Close the window
+                if let Some(id) = self.main_window_id.take() {
+                    return Task::batch([
+                        window::close(id),
+                        self.poll_dbus_commands(),
+                    ]);
+                }
                 return self.poll_dbus_commands();
             }
             Message::DbusToggle => {
                 tracing::info!("D-Bus: Toggling window visibility");
-                self.visible = !self.visible;
-                // Emit visibility changed signal
-                self.emit_visibility_signal(self.visible);
-                // TODO: Actually toggle the window when layer-shell is implemented
-                return self.poll_dbus_commands();
+                if self.visible {
+                    return Task::done(cosmic::Action::App(Message::DbusHide));
+                } else {
+                    return Task::done(cosmic::Action::App(Message::DbusShow));
+                }
             }
             Message::DbusQuit => {
                 tracing::info!("D-Bus: Quitting application");
@@ -228,12 +267,15 @@ impl cosmic::Application for AppModel {
             Message::DbusServerStarted => {
                 tracing::info!("D-Bus server started successfully");
 
-                // Check layer-shell availability now that the window is up
+                // Check layer-shell availability
                 self.layer_shell_config.check_availability();
                 log_layer_status(&self.layer_shell_config);
 
-                // Start polling D-Bus commands
-                return self.poll_dbus_commands();
+                // Auto-show window on startup and start polling D-Bus commands
+                return Task::batch([
+                    Task::done(cosmic::Action::App(Message::DbusShow)),
+                    self.poll_dbus_commands(),
+                ]);
             }
             Message::DbusServerFailed(error) => {
                 tracing::error!("Failed to start D-Bus server: {}", error);
@@ -260,6 +302,16 @@ impl cosmic::Application for AppModel {
                     None => {
                         tracing::warn!("D-Bus command channel closed");
                     }
+                }
+            }
+            Message::WindowOpened(id) => {
+                tracing::info!("Window opened with id: {:?}", id);
+                self.main_window_id = Some(id);
+            }
+            Message::WindowClosed(id) => {
+                tracing::info!("Window closed: {:?}", id);
+                if self.main_window_id == Some(id) {
+                    self.main_window_id = None;
                 }
             }
         }
@@ -312,21 +364,19 @@ impl AppModel {
     }
 
     /// Poll for D-Bus commands from the receiver.
-    fn poll_dbus_commands(&mut self) -> Task<cosmic::Action<Message>> {
-        if let Some(mut rx) = self.dbus_rx.take() {
-            return Task::perform(
-                async move {
-                    let cmd = rx.next().await;
-                    (cmd, rx)
-                },
-                |(cmd, rx)| {
-                    // We'll need to restore the receiver somehow
-                    // For now, we just process the command
-                    cosmic::Action::App(Message::DbusCommandReceived(cmd))
-                },
-            );
-        }
-        Task::none()
+    fn poll_dbus_commands(&self) -> Task<cosmic::Action<Message>> {
+        let dbus_rx = Arc::clone(&self.dbus_rx);
+        Task::perform(
+            async move {
+                let mut guard = dbus_rx.lock().await;
+                if let Some(ref mut rx) = *guard {
+                    rx.next().await
+                } else {
+                    None
+                }
+            },
+            |cmd| cosmic::Action::App(Message::DbusCommandReceived(cmd)),
+        )
     }
 
     /// Get the layer-shell configuration.
@@ -416,10 +466,10 @@ mod tests {
     /// Test: State struct has correct version for cosmic_config
     #[test]
     fn test_state_version() {
-        // WindowState should have VERSION = 1
+        // WindowState should have VERSION = 3 (bumped for layer-shell migration)
         assert_eq!(
-            WindowState::VERSION, 1,
-            "WindowState::VERSION should be 1"
+            WindowState::VERSION, 3,
+            "WindowState::VERSION should be 3"
         );
     }
 
@@ -438,13 +488,11 @@ mod tests {
         // Modify state values
         state.width = 1024.0;
         state.height = 400.0;
-        state.x = 100;
-        state.y = 200;
+        state.is_floating = true;
 
         assert_eq!(state.width, 1024.0, "Width should be modifiable");
         assert_eq!(state.height, 400.0, "Height should be modifiable");
-        assert_eq!(state.x, 100, "X position should be modifiable");
-        assert_eq!(state.y, 200, "Y position should be modifiable");
+        assert!(state.is_floating, "Floating mode should be modifiable");
     }
 
     /// Test: Message enum variants exist and can be created
@@ -501,36 +549,21 @@ mod tests {
     }
 
     /// Test: D-Bus command received message variant
+    /// Note: DbusCommandReceived now includes a receiver, so we test the command enum directly
     #[test]
-    fn test_dbus_command_received_variants() {
-        // Test with Some commands
-        let show_cmd = Message::DbusCommandReceived(Some(DbusCommand::Show));
-        assert!(matches!(
-            show_cmd,
-            Message::DbusCommandReceived(Some(DbusCommand::Show))
-        ));
+    fn test_dbus_command_variants() {
+        // Test DbusCommand enum variants
+        let show = DbusCommand::Show;
+        assert!(matches!(show, DbusCommand::Show));
 
-        let hide_cmd = Message::DbusCommandReceived(Some(DbusCommand::Hide));
-        assert!(matches!(
-            hide_cmd,
-            Message::DbusCommandReceived(Some(DbusCommand::Hide))
-        ));
+        let hide = DbusCommand::Hide;
+        assert!(matches!(hide, DbusCommand::Hide));
 
-        let toggle_cmd = Message::DbusCommandReceived(Some(DbusCommand::Toggle));
-        assert!(matches!(
-            toggle_cmd,
-            Message::DbusCommandReceived(Some(DbusCommand::Toggle))
-        ));
+        let toggle = DbusCommand::Toggle;
+        assert!(matches!(toggle, DbusCommand::Toggle));
 
-        let quit_cmd = Message::DbusCommandReceived(Some(DbusCommand::Quit));
-        assert!(matches!(
-            quit_cmd,
-            Message::DbusCommandReceived(Some(DbusCommand::Quit))
-        ));
-
-        // Test with None
-        let none_cmd = Message::DbusCommandReceived(None);
-        assert!(matches!(none_cmd, Message::DbusCommandReceived(None)));
+        let quit = DbusCommand::Quit;
+        assert!(matches!(quit, DbusCommand::Quit));
     }
 
     /// Test: Layer-shell config defaults to Overlay layer

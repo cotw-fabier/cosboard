@@ -47,7 +47,12 @@ fn main() -> cosmic::iced::Result {
         // Use client-side decorations (no window manager decorations)
         .client_decorations(true)
         // Enable transparency for the window
-        .transparent(true);
+        .transparent(true)
+        // Keep app running when window closes (for D-Bus service to remain active)
+        .exit_on_close(false)
+        // Start without a main window - we'll create secondary windows on demand
+        // This prevents the app from exiting when windows are closed
+        .no_main_window(true);
 
     // Log the window level configuration
     tracing::info!(

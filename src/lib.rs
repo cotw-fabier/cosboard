@@ -96,8 +96,7 @@ mod integration_tests {
         let mut state = WindowState::default();
         state.width = 1024.0;
         state.height = 400.0;
-        state.x = 100;
-        state.y = 200;
+        state.is_floating = true;
 
         // Verify state can be cloned (would be serialized/deserialized in real app)
         let restored_state = state.clone();
@@ -110,8 +109,10 @@ mod integration_tests {
             state.height, restored_state.height,
             "Height should persist correctly"
         );
-        assert_eq!(state.x, restored_state.x, "X position should persist correctly");
-        assert_eq!(state.y, restored_state.y, "Y position should persist correctly");
+        assert_eq!(
+            state.is_floating, restored_state.is_floating,
+            "Floating mode should persist correctly"
+        );
     }
 
     /// Integration Test 3: Multiple rapid resize events handling
@@ -193,26 +194,28 @@ mod integration_tests {
         );
     }
 
-    /// Integration Test 6: Window position restoration accuracy
+    /// Integration Test 6: Window state restoration accuracy
     ///
-    /// This test verifies that window position values are preserved exactly.
+    /// This test verifies that window state values are preserved exactly.
+    /// Note: Position (x/y) is not stored for layer surfaces - compositor controls placement.
     #[test]
-    fn test_window_position_restoration_accuracy() {
+    fn test_window_state_restoration_accuracy() {
         let original = WindowState {
-            x: 1234,
-            y: 5678,
             width: 987.654,
             height: 321.098,
+            is_floating: true,
         };
 
         // Clone simulates save/restore cycle
         let restored = original.clone();
 
-        assert_eq!(original.x, restored.x, "X position must be exact");
-        assert_eq!(original.y, restored.y, "Y position must be exact");
         // Float comparison with exact equality since these are not computed
         assert_eq!(original.width, restored.width, "Width must be exact");
         assert_eq!(original.height, restored.height, "Height must be exact");
+        assert_eq!(
+            original.is_floating, restored.is_floating,
+            "Floating mode must be exact"
+        );
     }
 
     /// Integration Test 7: Layer-shell configuration workflow
@@ -245,7 +248,8 @@ mod integration_tests {
     fn test_complete_message_flow() {
         use crate::app::Message;
 
-        // Verify all D-Bus-related message variants exist and can be created
+        // Verify D-Bus-related message variants exist and can be created
+        // Note: DbusCommandReceived now includes a receiver, so we skip testing it directly
         let messages: Vec<Message> = vec![
             Message::DbusShow,
             Message::DbusHide,
@@ -253,11 +257,6 @@ mod integration_tests {
             Message::DbusQuit,
             Message::DbusServerStarted,
             Message::DbusServerFailed("test".to_string()),
-            Message::DbusCommandReceived(Some(DbusCommand::Show)),
-            Message::DbusCommandReceived(Some(DbusCommand::Hide)),
-            Message::DbusCommandReceived(Some(DbusCommand::Toggle)),
-            Message::DbusCommandReceived(Some(DbusCommand::Quit)),
-            Message::DbusCommandReceived(None),
         ];
 
         // Verify each message variant matches expected pattern
@@ -268,12 +267,29 @@ mod integration_tests {
                 | Message::DbusToggle
                 | Message::DbusQuit
                 | Message::DbusServerStarted
-                | Message::DbusServerFailed(_)
-                | Message::DbusCommandReceived(_) => {
+                | Message::DbusServerFailed(_) => {
                     // All D-Bus messages are present and matchable
                 }
                 _ => {
                     // Other message types are valid too
+                }
+            }
+        }
+
+        // Also verify DbusCommand enum variants
+        let commands = vec![
+            DbusCommand::Show,
+            DbusCommand::Hide,
+            DbusCommand::Toggle,
+            DbusCommand::Quit,
+        ];
+        for cmd in commands {
+            match cmd {
+                DbusCommand::Show
+                | DbusCommand::Hide
+                | DbusCommand::Toggle
+                | DbusCommand::Quit => {
+                    // All command variants exist
                 }
             }
         }

@@ -2,40 +2,46 @@
 
 //! System tray applet for Cosboard.
 //!
-//! This module provides a panel applet that allows users to show/hide
-//! the keyboard from the system tray.
+//! This module provides a panel applet that manages a keyboard layer surface.
+//! The applet spawns and controls a layer-shell keyboard surface within the
+//! same process using libcosmic's Wayland layer-shell support.
 //!
 //! # Architecture
 //!
-//! The applet communicates with the main Cosboard application via D-Bus.
-//! It displays an icon in the COSMIC panel and provides:
+//! The applet runs as a single process that:
+//! - Displays an icon in the COSMIC panel
+//! - Manages a layer-shell keyboard surface (anchored to bottom of screen)
+//! - Supports exclusive zone (pushes windows up) or floating overlay mode
+//! - Persists window state (height, floating mode) between sessions
 //! - Left-click: Toggle keyboard visibility
-//! - Right-click: Open popup menu with show/hide/quit options
+//! - Right-click: Open popup menu with show/hide/mode toggle/quit options
 //!
 //! # Running the Applet
 //!
-//! The applet is run as a separate binary using the `applet` feature:
 //! ```bash
 //! cargo run --bin cosboard-applet
 //! ```
 
-use crate::dbus::{DbusClient, DbusResult};
 use crate::fl;
+use crate::state::WindowState;
 use cosmic::app::{Core, Task};
-use cosmic::iced::window::Id;
-use cosmic::iced::Rectangle;
-use cosmic::iced_runtime::core::window;
+use cosmic::cosmic_config::{self, CosmicConfigEntry};
+use cosmic::iced::event;
+use cosmic::iced::window::{self, Id};
+use cosmic::iced::{Length, Limits, Rectangle};
+use cosmic::iced_runtime::platform_specific::wayland::layer_surface::{
+    IcedMargin, IcedOutput, SctkLayerSurfaceSettings,
+};
+use cosmic::iced_winit::platform_specific::wayland::commands::layer_surface::{
+    destroy_layer_surface, get_layer_surface, set_exclusive_zone, Anchor, KeyboardInteractivity,
+    Layer,
+};
 use cosmic::surface::action::{app_popup, destroy_popup};
 use cosmic::widget::{self, divider, list_column};
 use cosmic::Element;
-use std::sync::Arc;
-use tokio::sync::Mutex;
 
 /// The applet Application ID (distinct from the main application).
 pub const APPLET_ID: &str = "io.github.cosboard.Cosboard.Applet";
-
-/// Shared D-Bus client handle wrapped in Arc<Mutex> for thread-safe access.
-type SharedDbusClient = Arc<Mutex<Option<DbusClient>>>;
 
 /// The applet model stores state for the system tray applet.
 pub struct AppletModel {
@@ -43,11 +49,14 @@ pub struct AppletModel {
     core: Core,
     /// Whether the popup menu is currently open.
     popup: Option<Id>,
-    /// D-Bus client for communicating with the main application.
-    /// This is None until the client successfully connects.
-    dbus_client: SharedDbusClient,
-    /// Whether we're currently connected to D-Bus.
-    connected: bool,
+    /// The keyboard layer surface ID (if open).
+    keyboard_surface: Option<window::Id>,
+    /// Whether the keyboard is currently visible.
+    keyboard_visible: bool,
+    /// Window state (size, floating mode) for the keyboard.
+    window_state: WindowState,
+    /// Config context for persisting window state.
+    state_config: Option<cosmic_config::Config>,
 }
 
 impl Default for AppletModel {
@@ -55,8 +64,10 @@ impl Default for AppletModel {
         Self {
             core: Core::default(),
             popup: None,
-            dbus_client: Arc::new(Mutex::new(None)),
-            connected: false,
+            keyboard_surface: None,
+            keyboard_visible: false,
+            window_state: WindowState::default(),
+            state_config: None,
         }
     }
 }
@@ -70,16 +81,33 @@ pub enum Message {
     Show,
     /// Hide the keyboard.
     Hide,
-    /// Quit the main application.
+    /// Quit the applet.
     Quit,
     /// Popup menu closed.
     PopupClosed(Id),
     /// Handle surface actions (for popup management).
     Surface(cosmic::surface::Action),
-    /// D-Bus client connected successfully.
-    DbusConnected(bool),
-    /// D-Bus operation completed (success/failure).
-    DbusOperationComplete(Result<(), String>),
+    /// Keyboard layer surface was closed.
+    KeyboardSurfaceClosed(window::Id),
+    /// Keyboard layer surface was resized.
+    KeyboardSurfaceResized(window::Id, f32, f32),
+    /// Toggle between exclusive zone and floating mode.
+    ToggleExclusiveZone,
+    /// Save window state (debounced).
+    SaveState,
+}
+
+impl AppletModel {
+    /// Save the current window state to disk.
+    fn save_state(&self) {
+        if let Some(ref config) = self.state_config {
+            if let Err(e) = self.window_state.write_entry(config) {
+                tracing::warn!("Failed to save window state: {:?}", e);
+            } else {
+                tracing::debug!("Saved window state: {:?}", self.window_state);
+            }
+        }
+    }
 }
 
 impl cosmic::Application for AppletModel {
@@ -103,40 +131,51 @@ impl cosmic::Application for AppletModel {
         &mut self.core
     }
 
-    /// Initialize the applet.
+    /// Initialize the applet and load persisted window state.
     fn init(core: Core, _flags: Self::Flags) -> (Self, Task<Self::Message>) {
-        let dbus_client: SharedDbusClient = Arc::new(Mutex::new(None));
-        let dbus_client_clone = Arc::clone(&dbus_client);
+        // Load persisted state using Config::new_state for transient data
+        let (state_config, window_state) =
+            match cosmic_config::Config::new_state(APPLET_ID, WindowState::VERSION) {
+                Ok(config) => {
+                    let state = WindowState::get_entry(&config).unwrap_or_else(|(_errors, def)| {
+                        tracing::debug!("Using default window state");
+                        def
+                    });
+                    tracing::info!("Loaded window state: {:?}", state);
+                    (Some(config), state)
+                }
+                Err(e) => {
+                    tracing::warn!("Failed to load state config: {}", e);
+                    (None, WindowState::default())
+                }
+            };
 
         let applet = AppletModel {
             core,
             popup: None,
-            dbus_client,
-            connected: false,
+            keyboard_surface: None,
+            keyboard_visible: false,
+            window_state,
+            state_config,
         };
+        (applet, Task::none())
+    }
 
-        // Start D-Bus client connection asynchronously
-        // Note: Task<M> is iced::Task<cosmic::Action<M>>, so the callback must return cosmic::Action<M>
-        let connect_task = Task::perform(
-            async move {
-                // Try to connect with retries (3 attempts, starting with 100ms delay)
-                match DbusClient::connect_with_retries(3, 100).await {
-                    Ok(client) => {
-                        let mut guard = dbus_client_clone.lock().await;
-                        *guard = Some(client);
-                        tracing::info!("Applet connected to D-Bus service");
-                        true
+    /// Subscribe to window events to detect resize/close.
+    fn subscription(&self) -> cosmic::iced_futures::Subscription<Self::Message> {
+        event::listen_with(|event, _, id| {
+            if let cosmic::iced::Event::Window(window_event) = event {
+                match window_event {
+                    window::Event::Closed => Some(Message::KeyboardSurfaceClosed(id)),
+                    window::Event::Resized(size) => {
+                        Some(Message::KeyboardSurfaceResized(id, size.width, size.height))
                     }
-                    Err(e) => {
-                        tracing::warn!("Failed to connect to D-Bus service: {}", e);
-                        false
-                    }
+                    _ => None,
                 }
-            },
-            |connected| cosmic::Action::App(Message::DbusConnected(connected)),
-        );
-
-        (applet, connect_task)
+            } else {
+                None
+            }
+        })
     }
 
     /// Handle popup close requests.
@@ -155,57 +194,93 @@ impl cosmic::Application for AppletModel {
                     ));
                 }
 
-                // Send toggle command to main application
-                let client = Arc::clone(&self.dbus_client);
-                return Task::perform(
-                    async move { perform_dbus_operation(client, DbusOperation::Toggle).await },
-                    |result| cosmic::Action::App(Message::DbusOperationComplete(result)),
-                );
+                // Toggle keyboard visibility
+                if self.keyboard_visible {
+                    return Task::done(cosmic::Action::App(Message::Hide));
+                } else {
+                    return Task::done(cosmic::Action::App(Message::Show));
+                }
             }
             Message::Show => {
-                // Close popup
-                if let Some(id) = self.popup.take() {
-                    let _: Task<Message> = cosmic::task::message(cosmic::Action::<Message>::Cosmic(
-                        cosmic::app::Action::Surface(destroy_popup(id)),
-                    ));
+                // Close popup if open
+                if let Some(popup_id) = self.popup.take() {
+                    // First close popup, then show keyboard
+                    return Task::batch([
+                        cosmic::task::message(cosmic::Action::<Message>::Cosmic(
+                            cosmic::app::Action::Surface(destroy_popup(popup_id)),
+                        )),
+                        Task::done(cosmic::Action::App(Message::Show)),
+                    ]);
                 }
 
-                // Send show command
-                let client = Arc::clone(&self.dbus_client);
-                return Task::perform(
-                    async move { perform_dbus_operation(client, DbusOperation::Show).await },
-                    |result| cosmic::Action::App(Message::DbusOperationComplete(result)),
+                if self.keyboard_visible {
+                    return Task::none();
+                }
+
+                // Create layer surface for keyboard
+                let id = window::Id::unique();
+                let height = self.window_state.height as u32;
+                // is_floating = true means overlay (no exclusive zone)
+                // is_floating = false means exclusive zone (default)
+                let exclusive_zone = if self.window_state.is_floating { 0 } else { height as i32 };
+
+                let settings = SctkLayerSurfaceSettings {
+                    id,
+                    layer: Layer::Overlay,
+                    keyboard_interactivity: KeyboardInteractivity::None,
+                    input_zone: None,
+                    anchor: Anchor::BOTTOM | Anchor::LEFT | Anchor::RIGHT,
+                    output: IcedOutput::Active,
+                    namespace: "cosboard-keyboard".to_string(),
+                    margin: IcedMargin::default(),
+                    size: Some((None, Some(height))),  // Full width, fixed height
+                    exclusive_zone,
+                    size_limits: Limits::NONE
+                        .min_height(150.0)
+                        .max_height(500.0),
+                };
+
+                self.keyboard_surface = Some(id);
+                self.keyboard_visible = true;
+
+                tracing::info!(
+                    "Opening keyboard layer surface: {:?} height {} exclusive_zone {}",
+                    id,
+                    height,
+                    exclusive_zone
                 );
+
+                return get_layer_surface(settings);
             }
             Message::Hide => {
-                // Close popup
-                if let Some(id) = self.popup.take() {
-                    let _: Task<Message> = cosmic::task::message(cosmic::Action::<Message>::Cosmic(
-                        cosmic::app::Action::Surface(destroy_popup(id)),
-                    ));
+                // Close popup if open
+                if let Some(popup_id) = self.popup.take() {
+                    // First close popup, then hide keyboard
+                    return Task::batch([
+                        cosmic::task::message(cosmic::Action::<Message>::Cosmic(
+                            cosmic::app::Action::Surface(destroy_popup(popup_id)),
+                        )),
+                        Task::done(cosmic::Action::App(Message::Hide)),
+                    ]);
                 }
 
-                // Send hide command
-                let client = Arc::clone(&self.dbus_client);
-                return Task::perform(
-                    async move { perform_dbus_operation(client, DbusOperation::Hide).await },
-                    |result| cosmic::Action::App(Message::DbusOperationComplete(result)),
-                );
+                if !self.keyboard_visible {
+                    return Task::none();
+                }
+
+                // Save state before closing
+                self.save_state();
+
+                self.keyboard_visible = false;
+                if let Some(id) = self.keyboard_surface.take() {
+                    tracing::info!("Destroying keyboard layer surface: {:?}", id);
+                    return destroy_layer_surface(id);
+                }
             }
             Message::Quit => {
-                // Close popup
-                if let Some(id) = self.popup.take() {
-                    let _: Task<Message> = cosmic::task::message(cosmic::Action::<Message>::Cosmic(
-                        cosmic::app::Action::Surface(destroy_popup(id)),
-                    ));
-                }
-
-                // Send quit command
-                let client = Arc::clone(&self.dbus_client);
-                return Task::perform(
-                    async move { perform_dbus_operation(client, DbusOperation::Quit).await },
-                    |result| cosmic::Action::App(Message::DbusOperationComplete(result)),
-                );
+                // Save state before quitting
+                self.save_state();
+                std::process::exit(0);
             }
             Message::PopupClosed(id) => {
                 if self.popup.as_ref() == Some(&id) {
@@ -217,38 +292,47 @@ impl cosmic::Application for AppletModel {
                     cosmic::app::Action::Surface(action),
                 ));
             }
-            Message::DbusConnected(connected) => {
-                self.connected = connected;
-            }
-            Message::DbusOperationComplete(result) => {
-                if let Err(e) = result {
-                    tracing::error!("D-Bus operation failed: {}", e);
-                    // Try to reconnect if the call failed
-                    if self.connected {
-                        self.connected = false;
-                        let client = Arc::clone(&self.dbus_client);
-                        return Task::perform(
-                            async move {
-                                match DbusClient::connect_with_retries(3, 100).await {
-                                    Ok(new_client) => {
-                                        let mut guard = client.lock().await;
-                                        *guard = Some(new_client);
-                                        tracing::info!("Applet reconnected to D-Bus service");
-                                        true
-                                    }
-                                    Err(e) => {
-                                        tracing::warn!(
-                                            "Failed to reconnect to D-Bus service: {}",
-                                            e
-                                        );
-                                        false
-                                    }
-                                }
-                            },
-                            |connected| cosmic::Action::App(Message::DbusConnected(connected)),
-                        );
-                    }
+            Message::KeyboardSurfaceClosed(id) => {
+                if self.keyboard_surface == Some(id) {
+                    self.keyboard_surface = None;
+                    self.keyboard_visible = false;
+                    tracing::info!("Keyboard layer surface closed: {:?}", id);
                 }
+            }
+            Message::KeyboardSurfaceResized(id, _width, height) => {
+                if self.keyboard_surface == Some(id) {
+                    self.window_state.height = height;
+                    tracing::debug!("Keyboard resized to height {}", height);
+
+                    // Update exclusive zone if in exclusive mode
+                    let mut tasks = vec![Task::done(cosmic::Action::App(Message::SaveState))];
+                    if !self.window_state.is_floating {
+                        tasks.push(set_exclusive_zone(id, height as i32));
+                    }
+                    return Task::batch(tasks);
+                }
+            }
+            Message::ToggleExclusiveZone => {
+                self.window_state.is_floating = !self.window_state.is_floating;
+                self.save_state();
+
+                // Update exclusive zone on existing surface
+                if let Some(id) = self.keyboard_surface {
+                    let zone = if self.window_state.is_floating {
+                        0
+                    } else {
+                        self.window_state.height as i32
+                    };
+                    tracing::info!(
+                        "Toggling exclusive zone: is_floating={} zone={}",
+                        self.window_state.is_floating,
+                        zone
+                    );
+                    return set_exclusive_zone(id, zone);
+                }
+            }
+            Message::SaveState => {
+                self.save_state();
             }
         }
         Task::none()
@@ -293,6 +377,12 @@ impl cosmic::Application for AppletModel {
                         },
                         Some(Box::new(|state: &AppletModel| {
                             // Build the popup menu content
+                            let mode_label = if state.window_state.is_floating {
+                                fl!("exclusive-mode")
+                            } else {
+                                fl!("floating-mode")
+                            };
+
                             let content = list_column()
                                 .padding(8)
                                 .spacing(0)
@@ -309,6 +399,16 @@ impl cosmic::Application for AppletModel {
                                         "hide-keyboard"
                                     )))
                                     .on_press(Message::Hide),
+                                )
+                                // Separator
+                                .add(
+                                    cosmic::applet::padded_control(divider::horizontal::default())
+                                        .padding([8, 0]),
+                                )
+                                // Toggle exclusive zone / floating mode
+                                .add(
+                                    cosmic::applet::menu_button(widget::text::body(mode_label))
+                                        .on_press(Message::ToggleExclusiveZone),
                                 )
                                 // Separator
                                 .add(
@@ -338,47 +438,26 @@ impl cosmic::Application for AppletModel {
         ))
     }
 
-    /// Handle views for additional windows (popups).
-    fn view_window(&self, _id: Id) -> Element<'_, Message> {
-        // Popup content is handled via app_popup in view()
-        "".into()
+    /// Handle views for additional windows (layer surfaces, popups).
+    fn view_window(&self, id: window::Id) -> Element<'_, Message> {
+        if Some(id) == self.keyboard_surface {
+            // Keyboard layer surface content (placeholder - will add actual keyboard later)
+            cosmic::widget::container(cosmic::widget::text::body(
+                "Keyboard (Layer Surface)",
+            ))
+            .width(Length::Fill)
+            .height(Length::Fill)
+            .class(cosmic::style::Container::Background)
+            .into()
+        } else {
+            // Popup content is handled via app_popup in view()
+            "".into()
+        }
     }
 
     /// Set the applet style (transparent background).
     fn style(&self) -> Option<cosmic::iced_runtime::Appearance> {
         Some(cosmic::applet::style())
-    }
-}
-
-// ============================================================================
-// D-Bus Operation Helper
-// ============================================================================
-
-/// D-Bus operations that can be performed.
-enum DbusOperation {
-    Show,
-    Hide,
-    Toggle,
-    Quit,
-}
-
-/// Perform a D-Bus operation using the shared client.
-async fn perform_dbus_operation(
-    client: SharedDbusClient,
-    operation: DbusOperation,
-) -> Result<(), String> {
-    let guard = client.lock().await;
-    match &*guard {
-        Some(dbus_client) => {
-            let result: DbusResult<()> = match operation {
-                DbusOperation::Show => dbus_client.show().await,
-                DbusOperation::Hide => dbus_client.hide().await,
-                DbusOperation::Toggle => dbus_client.toggle().await,
-                DbusOperation::Quit => dbus_client.quit().await,
-            };
-            result.map_err(|e| e.to_string())
-        }
-        None => Err("D-Bus client not connected".to_string()),
     }
 }
 
@@ -395,7 +474,7 @@ pub fn run() -> cosmic::iced::Result {
     let requested_languages = i18n_embed::DesktopLanguageRequester::requested_languages();
     crate::i18n::init(&requested_languages);
 
-    // Run the applet
+    // Run the applet (cosmic::applet::run handles logging initialization)
     cosmic::applet::run::<AppletModel>(())
 }
 
@@ -464,36 +543,33 @@ mod tests {
             "Popup should not be open by default"
         );
 
-        // Should not be connected by default
-        assert!(!applet.connected, "Should not be connected by default");
+        // Keyboard should not be visible by default
+        assert!(
+            !applet.keyboard_visible,
+            "Keyboard should not be visible by default"
+        );
+
+        // Keyboard layer surface should be None by default
+        assert!(
+            applet.keyboard_surface.is_none(),
+            "Keyboard surface should be None by default"
+        );
+
+        // State config should be None by default (loaded in init)
+        assert!(
+            applet.state_config.is_none(),
+            "State config should be None in default"
+        );
     }
 
-    /// Test: D-Bus operation result message handling
+    /// Test: Window state has sensible defaults
     #[test]
-    fn test_dbus_operation_result_message() {
-        // Test success case
-        let success = Message::DbusOperationComplete(Ok(()));
-        assert!(matches!(success, Message::DbusOperationComplete(Ok(()))));
+    fn test_window_state_defaults() {
+        let state = WindowState::default();
 
-        // Test error case
-        let error = Message::DbusOperationComplete(Err("test error".to_string()));
-        match error {
-            Message::DbusOperationComplete(Err(msg)) => {
-                assert_eq!(msg, "test error");
-            }
-            _ => panic!("Expected DbusOperationComplete error"),
-        }
-    }
-
-    /// Test: D-Bus connected message handling
-    #[test]
-    fn test_dbus_connected_message() {
-        // Test connected case
-        let connected = Message::DbusConnected(true);
-        assert!(matches!(connected, Message::DbusConnected(true)));
-
-        // Test disconnected case
-        let disconnected = Message::DbusConnected(false);
-        assert!(matches!(disconnected, Message::DbusConnected(false)));
+        assert!(state.width > 0.0, "Default width should be positive");
+        assert!(state.height > 0.0, "Default height should be positive");
+        // Default is exclusive zone mode (is_floating = false) for proper soft keyboard behavior
+        assert!(!state.is_floating, "Default should be exclusive zone mode");
     }
 }
