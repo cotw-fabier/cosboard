@@ -2,13 +2,13 @@
 
 ## Phase 1: MVP - Core Keyboard Applet
 
-1. [ ] Keyboard Applet Shell — Create the base Cosmic applet structure with proper window management, positioning, and desktop integration `M`
+1. [x] Keyboard Applet Shell — Create the base Cosmic applet structure with proper window management, positioning, and desktop integration `M`
 2. [ ] JSON Layout Parser — Implement a JSON schema for defining keyboard layouts including key positions, sizes, labels, and basic key codes `M`
 3. [ ] Layout Renderer — Render keyboard layouts from parsed JSON definitions with proper key sizing and spacing `M`
 4. [ ] Basic Key Input — Handle key press events and emit corresponding key codes to the system input layer `S`
 5. [ ] Default Layout Bundle — Create standard QWERTY layout with shift states, numbers row, and common punctuation `S`
 6. [ ] Layout Switching — Enable switching between multiple loaded layouts (e.g., letters, numbers, symbols) `S`
-7. [ ] Applet Toggle — Implement show/hide functionality with proper focus handling `S`
+7. [x] Applet Toggle — Implement show/hide functionality with proper focus handling `S`
 
 ## Phase 2: Enhanced Key Actions
 

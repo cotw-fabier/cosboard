@@ -1,0 +1,15 @@
+task_groups:
+  - name: Project Structure and Configuration
+    claude_code_subagent: implementer
+  - name: App Settings and Constants Module
+    claude_code_subagent: implementer
+  - name: Main Application Window Framework
+    claude_code_subagent: implementer
+  - name: Always-on-Top via Layer-Shell
+    claude_code_subagent: implementer
+  - name: D-Bus Interface for Window Control
+    claude_code_subagent: implementer
+  - name: System Tray Applet Component
+    claude_code_subagent: implementer
+  - name: Test Review and Final Integration
+    claude_code_subagent: implementation-verifier

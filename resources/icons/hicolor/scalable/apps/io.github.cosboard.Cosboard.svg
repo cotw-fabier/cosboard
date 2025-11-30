@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg viewBox="0 0 128 128" xmlns="http://www.w3.org/2000/svg">
+  <!-- Placeholder keyboard icon -->
+  <rect x="8" y="32" width="112" height="64" rx="8" ry="8" fill="#4a4a4a" stroke="#2a2a2a" stroke-width="2"/>
+  <!-- Row 1 keys -->
+  <rect x="16" y="40" width="16" height="12" rx="2" fill="#6a6a6a"/>
+  <rect x="36" y="40" width="16" height="12" rx="2" fill="#6a6a6a"/>
+  <rect x="56" y="40" width="16" height="12" rx="2" fill="#6a6a6a"/>
+  <rect x="76" y="40" width="16" height="12" rx="2" fill="#6a6a6a"/>
+  <rect x="96" y="40" width="16" height="12" rx="2" fill="#6a6a6a"/>
+  <!-- Row 2 keys -->
+  <rect x="16" y="56" width="16" height="12" rx="2" fill="#6a6a6a"/>
+  <rect x="36" y="56" width="16" height="12" rx="2" fill="#6a6a6a"/>
+  <rect x="56" y="56" width="16" height="12" rx="2" fill="#6a6a6a"/>
+  <rect x="76" y="56" width="16" height="12" rx="2" fill="#6a6a6a"/>
+  <rect x="96" y="56" width="16" height="12" rx="2" fill="#6a6a6a"/>
+  <!-- Spacebar -->
+  <rect x="28" y="72" width="72" height="12" rx="2" fill="#6a6a6a"/>
+</svg>

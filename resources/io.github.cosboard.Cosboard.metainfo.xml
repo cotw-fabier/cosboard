@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<component type="desktop-application">
+  <id>io.github.cosboard.Cosboard</id>
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>GPL-3.0-only</project_license>
+  <name>Cosboard</name>
+  <summary>A soft keyboard for COSMIC desktop</summary>
+  <icon type="remote" width="64" height="64" scale="1">
+    https://github.com/cosboard/cosboard/raw/main/resources/icons/hicolor/scalable/apps/io.github.cosboard.Cosboard.svg
+  </icon>
+  <url type="vcs-browser">https://github.com/cosboard/cosboard</url>
+  <launchable type="desktop-id">io.github.cosboard.Cosboard.desktop</launchable>
+  <provides>
+    <id>io.github.cosboard.Cosboard</id>
+    <binaries>
+      <binary>cosboard</binary>
+    </binaries>
+  </provides>
+  <requires>
+    <display_length compare="ge">360</display_length>
+  </requires>
+  <supports>
+    <control>keyboard</control>
+    <control>pointing</control>
+    <control>touch</control>
+  </supports>
+  <categories>
+    <category>COSMIC</category>
+    <category>Utility</category>
+    <category>Accessibility</category>
+  </categories>
+  <keywords>
+    <keyword>COSMIC</keyword>
+    <keyword>keyboard</keyword>
+    <keyword>soft</keyword>
+    <keyword>virtual</keyword>
+    <keyword>onscreen</keyword>
+  </keywords>
+  <content_rating type="oars-1.1" />
+</component>

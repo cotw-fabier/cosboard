@@ -1,0 +1,11 @@
+[Desktop Entry]
+Name=Cosboard
+Comment=A soft keyboard for COSMIC desktop
+Type=Application
+Icon=io.github.cosboard.Cosboard
+Exec=cosboard %F
+Terminal=false
+StartupNotify=true
+Categories=COSMIC;Utility;Accessibility;
+Keywords=COSMIC;keyboard;soft;virtual;onscreen;
+MimeType=

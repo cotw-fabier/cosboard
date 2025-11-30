@@ -1,0 +1,12 @@
+// SPDX-License-Identifier: GPL-3.0-only
+
+use cosmic::cosmic_config;
+use cosmic::cosmic_config::{cosmic_config_derive::CosmicConfigEntry, CosmicConfigEntry};
+
+/// User configuration that persists between application runs.
+#[derive(Debug, Default, Clone, CosmicConfigEntry, Eq, PartialEq)]
+#[version = 1]
+pub struct Config {
+    /// Placeholder for future keyboard settings.
+    pub placeholder: String,
+}
