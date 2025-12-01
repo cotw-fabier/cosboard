@@ -12,6 +12,7 @@
 //! - `config`: User configuration with cosmic_config persistence
 //! - `i18n`: Localization support using fluent translations
 //! - `layer_shell`: Wayland layer-shell integration for overlay behavior
+//! - `layout`: JSON layout parser for keyboard layout definitions
 //! - `state`: Window state persistence (position, size)
 
 pub mod app_settings;
@@ -19,6 +20,7 @@ pub mod applet;
 pub mod config;
 pub mod i18n;
 pub mod layer_shell;
+pub mod layout;
 pub mod state;
 
 // Re-export the fl! macro for localization

@@ -1,0 +1,93 @@
+{
+  "name": "QWERTY Base Layout",
+  "description": "Base QWERTY layout that can be extended via inheritance",
+  "author": "Cosboard Team",
+  "language": "en",
+  "locale": "en_US",
+  "version": "1.0",
+  "default_panel_id": "main",
+  "panels": {
+    "main": {
+      "id": "main",
+      "padding": 8.0,
+      "margin": 4.0,
+      "rows": [
+        {
+          "cells": [
+            {
+              "type": "key",
+              "label": "Q",
+              "code": "q",
+              "identifier": "key_q",
+              "width": 1.0,
+              "height": 1.0,
+              "alternatives": {
+                "Shift": "Q"
+              }
+            },
+            {
+              "type": "key",
+              "label": "W",
+              "code": "w",
+              "identifier": "key_w",
+              "width": 1.0,
+              "height": 1.0,
+              "alternatives": {
+                "Shift": "W"
+              }
+            },
+            {
+              "type": "key",
+              "label": "E",
+              "code": "e",
+              "identifier": "key_e",
+              "width": 1.0,
+              "height": 1.0,
+              "alternatives": {
+                "Shift": "E"
+              }
+            }
+          ]
+        },
+        {
+          "cells": [
+            {
+              "type": "key",
+              "label": "A",
+              "code": "a",
+              "identifier": "key_a",
+              "width": 1.0,
+              "height": 1.0,
+              "alternatives": {
+                "Shift": "A"
+              }
+            },
+            {
+              "type": "key",
+              "label": "S",
+              "code": "s",
+              "identifier": "key_s",
+              "width": 1.0,
+              "height": 1.0,
+              "alternatives": {
+                "Shift": "S"
+              }
+            }
+          ]
+        },
+        {
+          "cells": [
+            {
+              "type": "key",
+              "label": "Space",
+              "code": " ",
+              "identifier": "key_space",
+              "width": 3.0,
+              "height": 1.0
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

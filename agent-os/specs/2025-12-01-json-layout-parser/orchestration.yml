@@ -1,0 +1,15 @@
+task_groups:
+  - name: "Task Group 1: Foundation Types and Error Handling"
+    claude_code_subagent: implementer
+  - name: "Task Group 2: Layout Data Structures"
+    claude_code_subagent: implementer
+  - name: "Task Group 3: Core Parser Implementation"
+    claude_code_subagent: implementer
+  - name: "Task Group 4: Permissive Validation with Warnings"
+    claude_code_subagent: implementer
+  - name: "Task Group 5: Inheritance Resolution"
+    claude_code_subagent: implementer
+  - name: "Task Group 6: Public API and Integration"
+    claude_code_subagent: implementer
+  - name: "Task Group 7: Test Review & Gap Analysis"
+    claude_code_subagent: implementer

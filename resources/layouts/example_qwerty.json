@@ -1,0 +1,256 @@
+{
+  "name": "Example QWERTY Layout",
+  "description": "A comprehensive example keyboard layout demonstrating all JSON schema features",
+  "author": "Cosboard Team",
+  "language": "en",
+  "locale": "en_US",
+  "version": "1.0",
+  "default_panel_id": "main",
+  "panels": {
+    "main": {
+      "id": "main",
+      "padding": 8.0,
+      "margin": 4.0,
+      "rows": [
+        {
+          "cells": [
+            {
+              "type": "key",
+              "label": "Q",
+              "code": "q",
+              "identifier": "key_q",
+              "width": 1.0,
+              "height": 1.0,
+              "alternatives": {
+                "Shift": "Q",
+                "Up": "1"
+              }
+            },
+            {
+              "type": "key",
+              "label": "W",
+              "code": "w",
+              "identifier": "key_w",
+              "width": 1.0,
+              "height": 1.0,
+              "alternatives": {
+                "Shift": "W",
+                "Up": "2"
+              }
+            },
+            {
+              "type": "key",
+              "label": "E",
+              "code": "e",
+              "identifier": "key_e",
+              "width": 1.0,
+              "height": 1.0,
+              "alternatives": {
+                "Shift": "E",
+                "Up": "3",
+                "Left": "€"
+              }
+            },
+            {
+              "type": "key",
+              "label": "R",
+              "code": "r",
+              "identifier": "key_r",
+              "width": 1.0,
+              "height": 1.0,
+              "alternatives": {
+                "Shift": "R",
+                "Up": "4"
+              }
+            },
+            {
+              "type": "key",
+              "label": "T",
+              "code": "t",
+              "identifier": "key_t",
+              "width": 1.0,
+              "height": 1.0,
+              "alternatives": {
+                "Shift": "T",
+                "Up": "5"
+              }
+            }
+          ]
+        },
+        {
+          "cells": [
+            {
+              "type": "key",
+              "label": "A",
+              "code": "a",
+              "identifier": "key_a",
+              "width": 1.0,
+              "height": 1.0,
+              "alternatives": {
+                "Shift": "A",
+                "Up": "@"
+              }
+            },
+            {
+              "type": "key",
+              "label": "S",
+              "code": "s",
+              "identifier": "key_s",
+              "width": 1.0,
+              "height": 1.0,
+              "alternatives": {
+                "Shift": "S",
+                "Up": "#"
+              }
+            },
+            {
+              "type": "key",
+              "label": "D",
+              "code": "d",
+              "identifier": "key_d",
+              "width": 1.0,
+              "height": 1.0,
+              "alternatives": {
+                "Shift": "D",
+                "Up": "$"
+              }
+            }
+          ]
+        },
+        {
+          "cells": [
+            {
+              "type": "key",
+              "label": "Shift",
+              "code": "Shift_L",
+              "identifier": "key_shift",
+              "width": 1.5,
+              "height": 1.0,
+              "sticky": true
+            },
+            {
+              "type": "key",
+              "label": "Z",
+              "code": "z",
+              "identifier": "key_z",
+              "width": 1.0,
+              "height": 1.0,
+              "alternatives": {
+                "Shift": "Z"
+              }
+            },
+            {
+              "type": "key",
+              "label": "X",
+              "code": "x",
+              "identifier": "key_x",
+              "width": 1.0,
+              "height": 1.0,
+              "alternatives": {
+                "Shift": "X"
+              }
+            },
+            {
+              "type": "key",
+              "label": "⌫",
+              "code": "BackSpace",
+              "identifier": "key_backspace",
+              "width": 1.5,
+              "height": 1.0
+            }
+          ]
+        },
+        {
+          "cells": [
+            {
+              "type": "key",
+              "label": "Space",
+              "code": " ",
+              "identifier": "key_space",
+              "width": 4.0,
+              "height": 1.0
+            },
+            {
+              "type": "key",
+              "label": "⏎",
+              "code": "Return",
+              "identifier": "key_enter",
+              "width": 1.5,
+              "height": 1.0
+            }
+          ]
+        }
+      ]
+    },
+    "symbols": {
+      "id": "symbols",
+      "padding": 8.0,
+      "margin": 4.0,
+      "rows": [
+        {
+          "cells": [
+            {
+              "type": "key",
+              "label": "1",
+              "code": "1",
+              "identifier": "sym_1",
+              "width": 1.0,
+              "height": 1.0
+            },
+            {
+              "type": "key",
+              "label": "2",
+              "code": "2",
+              "identifier": "sym_2",
+              "width": 1.0,
+              "height": 1.0
+            },
+            {
+              "type": "key",
+              "label": "3",
+              "code": "3",
+              "identifier": "sym_3",
+              "width": 1.0,
+              "height": 1.0
+            }
+          ]
+        }
+      ]
+    },
+    "with_widgets": {
+      "id": "with_widgets",
+      "padding": 8.0,
+      "margin": 4.0,
+      "rows": [
+        {
+          "cells": [
+            {
+              "type": "widget",
+              "widget_type": "prediction_bar",
+              "width": 10.0,
+              "height": "40px"
+            }
+          ]
+        },
+        {
+          "cells": [
+            {
+              "type": "key",
+              "label": "Q",
+              "code": "q",
+              "identifier": "widget_q",
+              "width": 1.0,
+              "height": 1.0
+            },
+            {
+              "type": "widget",
+              "widget_type": "trackpad",
+              "width": 3.0,
+              "height": 2.0
+            }
+          ]
+        }
+      ]
+    }
+  }
+}
