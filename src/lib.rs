@@ -197,13 +197,15 @@ mod integration_tests {
     /// Integration Test 6: Window state restoration accuracy
     ///
     /// This test verifies that window state values are preserved exactly.
-    /// Note: Position (x/y) is not stored for layer surfaces - compositor controls placement.
+    /// Position is stored as margins from bottom-right anchor in floating mode.
     #[test]
     fn test_window_state_restoration_accuracy() {
         let original = WindowState {
             width: 987.654,
             height: 321.098,
             is_floating: true,
+            margin_bottom: 50,
+            margin_right: 100,
         };
 
         // Clone simulates save/restore cycle
@@ -215,6 +217,14 @@ mod integration_tests {
         assert_eq!(
             original.is_floating, restored.is_floating,
             "Floating mode must be exact"
+        );
+        assert_eq!(
+            original.margin_bottom, restored.margin_bottom,
+            "Margin bottom must be exact"
+        );
+        assert_eq!(
+            original.margin_right, restored.margin_right,
+            "Margin right must be exact"
         );
     }
 

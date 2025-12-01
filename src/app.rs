@@ -466,10 +466,10 @@ mod tests {
     /// Test: State struct has correct version for cosmic_config
     #[test]
     fn test_state_version() {
-        // WindowState should have VERSION = 3 (bumped for layer-shell migration)
+        // WindowState should have VERSION = 4 (bumped for floating mode margins)
         assert_eq!(
-            WindowState::VERSION, 3,
-            "WindowState::VERSION should be 3"
+            WindowState::VERSION, 4,
+            "WindowState::VERSION should be 4"
         );
     }
 
