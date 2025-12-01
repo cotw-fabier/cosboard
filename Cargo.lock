@@ -975,7 +975,6 @@ dependencies = [
  "tokio",
  "tracing",
  "tracing-subscriber",
- "zbus 5.12.0",
 ]
 
 [[package]]
@@ -2809,7 +2808,6 @@ dependencies = [
  "iced_renderer",
  "iced_runtime",
  "iced_tiny_skia",
- "iced_wgpu",
  "iced_widget",
  "iced_winit",
  "image",

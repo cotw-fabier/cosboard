@@ -1,9 +1,14 @@
 [Desktop Entry]
 Type=Application
-Name=Cosboard Applet
+Name=Cosboard
 Comment=System tray applet for Cosboard soft keyboard
 Exec=cosboard-applet
+Terminal=false
+Categories=COSMIC;
+Keywords=COSMIC;Iced;keyboard;virtual;onscreen;
 Icon=input-keyboard-symbolic
-Categories=COSMIC;System;
-X-COSMIC-Applet=true
+StartupNotify=false
 NoDisplay=true
+X-CosmicApplet=true
+X-CosmicHoverPopup=Auto
+X-OverflowPriority=10

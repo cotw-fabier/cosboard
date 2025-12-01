@@ -11,11 +11,6 @@ repository = "https://github.com/cosboard/cosboard"
 name = "cosboard"
 path = "src/lib.rs"
 
-# Main binary for the keyboard application
-[[bin]]
-name = "cosboard"
-path = "src/main.rs"
-
 # Applet binary for the system tray
 [[bin]]
 name = "cosboard-applet"
@@ -33,7 +28,6 @@ serde = { version = "1.0", features = ["derive"] }
 tokio = { version = "1.48.0", features = ["full"] }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
-zbus = "5"
 
 [dependencies.libcosmic]
 git = "https://github.com/pop-os/libcosmic.git"
@@ -42,21 +36,15 @@ features = [
     "a11y",
     # About widget for the app
     "about",
-    # Uses cosmic-settings-daemon to watch for config file changes
-    "dbus-config",
     # Support creating additional application windows
     "multi-window",
-    # On app startup, focuses an existing instance if the app is already open
-    "single-instance",
     # Uses tokio as the executor for the runtime
     "tokio",
     # Windowing support for X11, Windows, Mac, & Redox
     "winit",
     # Add Wayland support to winit
     "wayland",
-    # GPU-accelerated rendering
-    "wgpu",
-    # System tray applet support
+    # System tray applet support (uses tiny_skia software rendering - faster for small applets)
     "applet",
 ]
 

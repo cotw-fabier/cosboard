@@ -30,7 +30,7 @@ use cosmic::cosmic_config::{self, CosmicConfigEntry};
 use cosmic::iced::event;
 use cosmic::iced::mouse;
 use cosmic::iced::window::{self, Id};
-use cosmic::iced::{Event, Length, Limits, Point, Rectangle};
+use cosmic::iced::{Event, Length, Limits, Point};
 use cosmic::iced_runtime::platform_specific::wayland::layer_surface::{
     IcedMargin, IcedOutput, SctkLayerSurfaceSettings,
 };
@@ -143,6 +143,8 @@ impl Default for AppletModel {
 pub enum Message {
     /// Toggle keyboard visibility (left-click action).
     Toggle,
+    /// Toggle popup menu visibility (right-click action).
+    TogglePopup,
     /// Show the keyboard.
     Show,
     /// Hide the keyboard.
@@ -249,22 +251,9 @@ impl cosmic::Application for AppletModel {
 
     /// Initialize the applet and load persisted window state.
     fn init(core: Core, _flags: Self::Flags) -> (Self, Task<Self::Message>) {
-        // Load persisted state using Config::new_state for transient data
-        let (state_config, window_state) =
-            match cosmic_config::Config::new_state(APPLET_ID, WindowState::VERSION) {
-                Ok(config) => {
-                    let state = WindowState::get_entry(&config).unwrap_or_else(|(_errors, def)| {
-                        tracing::debug!("Using default window state");
-                        def
-                    });
-                    tracing::info!("Loaded window state: {:?}", state);
-                    (Some(config), state)
-                }
-                Err(e) => {
-                    tracing::warn!("Failed to load state config: {}", e);
-                    (None, WindowState::default())
-                }
-            };
+        // DIAGNOSTIC: Skip config loading to test if it's causing the delay
+        // TODO: Re-enable once we identify the performance issue
+        let window_state = WindowState::default();
 
         let applet = AppletModel {
             core,
@@ -276,7 +265,7 @@ impl cosmic::Application for AppletModel {
             pending_margin_right: window_state.margin_right,
             pending_margin_bottom: window_state.margin_bottom,
             window_state,
-            state_config,
+            state_config: None, // No config = no D-Bus operations
             is_dragging: false,
             resize_edge: None,
             last_cursor_position: None,
@@ -290,31 +279,45 @@ impl cosmic::Application for AppletModel {
         (applet, Task::none())
     }
 
-    /// Subscribe to window events to detect resize/close and cursor movement.
+    /// Subscribe to events only when actively dragging or resizing.
+    ///
+    /// Performance critical: Return `Subscription::none()` when idle to avoid
+    /// processing all window events in the system. This is the key difference
+    /// between responsive and laggy applets - the libcosmic example applet has
+    /// no subscription at all when idle.
     fn subscription(&self) -> cosmic::iced_futures::Subscription<Self::Message> {
-        event::listen_with(|event, _, id| match event {
-            Event::Window(window_event) => match window_event {
-                window::Event::Closed => Some(Message::KeyboardSurfaceClosed(id)),
-                window::Event::Resized(size) => {
-                    Some(Message::KeyboardSurfaceResized(id, size.width, size.height))
-                }
+        // ONLY subscribe when actively dragging or resizing
+        // When idle, return Subscription::none() for instant responsiveness
+        if self.is_dragging || self.resize_edge.is_some() {
+            event::listen_with(|event, _, _id| match event {
+                Event::Mouse(mouse_event) => match mouse_event {
+                    mouse::Event::CursorMoved { position } => Some(Message::CursorMoved(position)),
+                    mouse::Event::ButtonReleased(mouse::Button::Left) => {
+                        // End drag/resize on mouse release
+                        Some(Message::DragEnd)
+                    }
+                    _ => None,
+                },
                 _ => None,
-            },
-            Event::Mouse(mouse_event) => match mouse_event {
-                mouse::Event::CursorMoved { position } => Some(Message::CursorMoved(position)),
-                mouse::Event::ButtonReleased(mouse::Button::Left) => {
-                    // End drag/resize on mouse release
-                    Some(Message::DragEnd)
-                }
-                _ => None,
-            },
-            _ => None,
-        })
+            })
+        } else {
+            // No subscription when idle - critical for responsiveness
+            // Window close events are handled via on_close_requested instead
+            cosmic::iced_futures::Subscription::none()
+        }
     }
 
-    /// Handle popup close requests.
+    /// Handle surface close requests from the compositor.
+    ///
+    /// This handles both popup closes and keyboard surface closes.
+    /// Since we no longer have an idle subscription listening for window events,
+    /// this is the proper way to detect when surfaces are closed externally.
     fn on_close_requested(&self, id: window::Id) -> Option<Message> {
-        Some(Message::PopupClosed(id))
+        if Some(id) == self.keyboard_surface {
+            Some(Message::KeyboardSurfaceClosed(id))
+        } else {
+            Some(Message::PopupClosed(id))
+        }
     }
 
     /// Handle messages emitted by the applet.
@@ -334,6 +337,81 @@ impl cosmic::Application for AppletModel {
                 } else {
                     return Task::done(cosmic::Action::App(Message::Show));
                 }
+            }
+            Message::TogglePopup => {
+                // Right-click: toggle popup menu visibility
+                if let Some(id) = self.popup.take() {
+                    // Close popup if already open
+                    return cosmic::task::message(cosmic::Action::<Message>::Cosmic(
+                        cosmic::app::Action::Surface(destroy_popup(id)),
+                    ));
+                }
+
+                // Open popup menu using applet's default positioning
+                return cosmic::task::message(cosmic::Action::<Message>::Cosmic(
+                    cosmic::app::Action::Surface(app_popup::<AppletModel>(
+                        |state: &mut AppletModel| {
+                            let new_id = Id::unique();
+                            state.popup = Some(new_id);
+                            state.core.applet.get_popup_settings(
+                                state.core.main_window_id().unwrap(),
+                                new_id,
+                                None,
+                                None,
+                                None,
+                            )
+                        },
+                        Some(Box::new(|state: &AppletModel| {
+                            // Build the popup menu content
+                            let mode_label = if state.window_state.is_floating {
+                                fl!("exclusive-mode")
+                            } else {
+                                fl!("floating-mode")
+                            };
+
+                            let content = list_column()
+                                .padding(8)
+                                .spacing(0)
+                                // Show Keyboard menu item
+                                .add(
+                                    cosmic::applet::menu_button(widget::text::body(fl!(
+                                        "show-keyboard"
+                                    )))
+                                    .on_press(Message::Show),
+                                )
+                                // Hide Keyboard menu item
+                                .add(
+                                    cosmic::applet::menu_button(widget::text::body(fl!(
+                                        "hide-keyboard"
+                                    )))
+                                    .on_press(Message::Hide),
+                                )
+                                // Separator
+                                .add(
+                                    cosmic::applet::padded_control(divider::horizontal::default())
+                                        .padding([8, 0]),
+                                )
+                                // Toggle docked / floating mode
+                                .add(
+                                    cosmic::applet::menu_button(widget::text::body(mode_label))
+                                        .on_press(Message::ToggleFloatingMode),
+                                )
+                                // Separator
+                                .add(
+                                    cosmic::applet::padded_control(divider::horizontal::default())
+                                        .padding([8, 0]),
+                                )
+                                // Quit menu item
+                                .add(
+                                    cosmic::applet::menu_button(widget::text::body(fl!("quit")))
+                                        .on_press(Message::Quit),
+                                );
+
+                            Element::from(state.core.applet.popup_container(content))
+                                .map(cosmic::Action::App)
+                        })),
+                    )),
+                ));
             }
             Message::Show => {
                 // Close popup if open
@@ -635,6 +713,13 @@ impl cosmic::Application for AppletModel {
                 }
             }
             Message::CursorMoved(pos) => {
+                // Early return if not in any active drag/resize mode
+                // (This is defensive - subscription() should only send these when active)
+                if !self.is_dragging && self.resize_edge.is_none() {
+                    self.last_cursor_position = Some(pos);
+                    return Task::none();
+                }
+
                 // Use incremental delta from last position to prevent jumps when cursor
                 // leaves and re-enters the window (layer surfaces don't have pointer grab)
                 //
@@ -795,96 +880,20 @@ impl cosmic::Application for AppletModel {
     /// Render the applet icon button.
     fn view(&self) -> Element<'_, Message> {
         let has_popup = self.popup.is_some();
-        let popup_id = self.popup;
 
-        // Create the icon button using the applet context
-        let btn = self
-            .core
-            .applet
-            .icon_button("input-keyboard-symbolic")
-            .on_press_with_rectangle(move |offset, bounds| {
-                if let Some(id) = popup_id {
-                    // Close popup if already open
-                    Message::Surface(destroy_popup(id))
-                } else {
-                    // Open popup menu
-                    Message::Surface(app_popup::<AppletModel>(
-                        move |state: &mut AppletModel| {
-                            let new_id = Id::unique();
-                            state.popup = Some(new_id);
-                            let mut popup_settings = state.core.applet.get_popup_settings(
-                                state.core.main_window_id().unwrap(),
-                                new_id,
-                                None,
-                                None,
-                                None,
-                            );
+        // Create the icon button using the applet context (no click handler on the button itself)
+        let btn = self.core.applet.icon_button("input-keyboard-symbolic");
 
-                            popup_settings.positioner.anchor_rect = Rectangle {
-                                x: (bounds.x - offset.x) as i32,
-                                y: (bounds.y - offset.y) as i32,
-                                width: bounds.width as i32,
-                                height: bounds.height as i32,
-                            };
-
-                            popup_settings
-                        },
-                        Some(Box::new(|state: &AppletModel| {
-                            // Build the popup menu content
-                            let mode_label = if state.window_state.is_floating {
-                                fl!("exclusive-mode")
-                            } else {
-                                fl!("floating-mode")
-                            };
-
-                            let content = list_column()
-                                .padding(8)
-                                .spacing(0)
-                                // Show Keyboard menu item
-                                .add(
-                                    cosmic::applet::menu_button(widget::text::body(fl!(
-                                        "show-keyboard"
-                                    )))
-                                    .on_press(Message::Show),
-                                )
-                                // Hide Keyboard menu item
-                                .add(
-                                    cosmic::applet::menu_button(widget::text::body(fl!(
-                                        "hide-keyboard"
-                                    )))
-                                    .on_press(Message::Hide),
-                                )
-                                // Separator
-                                .add(
-                                    cosmic::applet::padded_control(divider::horizontal::default())
-                                        .padding([8, 0]),
-                                )
-                                // Toggle docked / floating mode
-                                .add(
-                                    cosmic::applet::menu_button(widget::text::body(mode_label))
-                                        .on_press(Message::ToggleFloatingMode),
-                                )
-                                // Separator
-                                .add(
-                                    cosmic::applet::padded_control(divider::horizontal::default())
-                                        .padding([8, 0]),
-                                )
-                                // Quit menu item
-                                .add(
-                                    cosmic::applet::menu_button(widget::text::body(fl!("quit")))
-                                        .on_press(Message::Quit),
-                                );
-
-                            Element::from(state.core.applet.popup_container(content))
-                                .map(cosmic::Action::App)
-                        })),
-                    ))
-                }
-            });
+        // Wrap in mouse_area to differentiate left-click vs right-click:
+        // - Left-click: Toggle keyboard visibility
+        // - Right-click: Open popup menu
+        let clickable = mouse_area(btn)
+            .on_press(Message::Toggle)
+            .on_right_press(Message::TogglePopup);
 
         // Wrap with tooltip
         Element::from(self.core.applet.applet_tooltip::<Message>(
-            btn,
+            clickable,
             fl!("toggle-keyboard"),
             has_popup,
             |a| Message::Surface(a),
@@ -1016,9 +1025,23 @@ impl cosmic::Application for AppletModel {
 /// This function should be called from a separate binary entry point.
 /// It sets up the COSMIC applet runtime and launches the AppletModel.
 pub fn run() -> cosmic::iced::Result {
-    // Initialize localization
-    let requested_languages = i18n_embed::DesktopLanguageRequester::requested_languages();
-    crate::i18n::init(&requested_languages);
+    // Initialize localization using LANG environment variable directly
+    // Avoids slow D-Bus call via DesktopLanguageRequester::requested_languages()
+    let lang = std::env::var("LANG")
+        .or_else(|_| std::env::var("LC_ALL"))
+        .or_else(|_| std::env::var("LC_MESSAGES"))
+        .unwrap_or_else(|_| "en-US.UTF-8".to_string());
+
+    // Parse just the language part (e.g., "en_US.UTF-8" -> "en-US")
+    let lang_code = lang
+        .split('.')
+        .next()
+        .unwrap_or("en-US")
+        .replace('_', "-");
+
+    if let Ok(lang_id) = lang_code.parse::<i18n_embed::unic_langid::LanguageIdentifier>() {
+        crate::i18n::init(&[lang_id]);
+    }
 
     // Run the applet (cosmic::applet::run handles logging initialization)
     cosmic::applet::run::<AppletModel>(())

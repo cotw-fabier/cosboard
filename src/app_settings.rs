@@ -22,9 +22,3 @@ pub const MIN_HEIGHT: f32 = 150.0;
 
 /// Resize border width in pixels.
 pub const RESIZE_BORDER: f64 = 8.0;
-
-/// D-Bus object path for window control interface.
-pub const DBUS_PATH: &str = "/io/github/cosboard/Cosboard";
-
-/// D-Bus interface name for window control.
-pub const DBUS_INTERFACE: &str = "io.github.cosboard.Cosboard";
