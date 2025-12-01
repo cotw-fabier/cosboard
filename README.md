@@ -26,11 +26,11 @@ Cosboard is the first native soft keyboard solution for the COSMIC desktop envir
 
 ## Current Features
 
-- Floating, always-on-top keyboard window
-- System tray applet for quick show/hide access
-- D-Bus interface for external control
-- Window position and size persistence
-- Chromeless (borderless) design with resizable borders
+- System tray applet with integrated keyboard layer surface
+- Docked mode (exclusive zone - pushes windows up) and floating mode
+- Drag and resize support in floating mode with preview surface
+- Window state persistence (size, position, mode)
+- Left-click to toggle keyboard, right-click for popup menu
 
 ## Quick Start
 
@@ -51,38 +51,41 @@ cd cosboard
 # Build in release mode
 cargo build --release
 
-# Run the main keyboard application
-cargo run --release
-
-# In a separate terminal, run the system tray applet
+# Run the applet (manages keyboard surface directly)
 cargo run --release --bin cosboard-applet
 ```
 
-### One-Liner (after building)
+### After Building
 
 ```bash
-# Run both components
-./target/release/cosboard & ./target/release/cosboard-applet
+./target/release/cosboard-applet
 ```
 
 ## Architecture
 
-Cosboard consists of two components that communicate via D-Bus:
+Cosboard runs as a single-process applet that manages an integrated keyboard layer surface:
 
 ```
-┌─────────────────────┐     D-Bus      ┌─────────────────────┐
-│   cosboard-applet   │◄──────────────►│      cosboard       │
-│   (System Tray)     │                │  (Keyboard Window)  │
-└─────────────────────┘                └─────────────────────┘
-        │                                       │
-        │ Click to toggle                       │ Floating window
-        ▼                                       ▼
-   ┌─────────┐                          ┌─────────────────┐
-   │  Panel  │                          │ Desktop Surface │
-   └─────────┘                          └─────────────────┘
+┌───────────────────────────────────────────────────┐
+│                 cosboard-applet                   │
+│  ┌─────────────────┐    ┌──────────────────────┐  │
+│  │  Panel Icon     │    │  Keyboard Surface    │  │
+│  │  (System Tray)  │───►│  (Layer Shell)       │  │
+│  └─────────────────┘    └──────────────────────┘  │
+└───────────────────────────────────────────────────┘
+         │                         │
+         ▼                         ▼
+    ┌─────────┐            ┌─────────────────┐
+    │  Panel  │            │ Desktop Surface │
+    └─────────┘            │ (Overlay Layer) │
+                           └─────────────────┘
 ```
 
-### D-Bus Interface
+The applet uses Wayland layer-shell protocol for the keyboard surface:
+- **Docked mode**: Anchored to bottom, exclusive zone pushes windows up
+- **Floating mode**: Anchored to bottom-right with margins, draggable/resizable
+
+### D-Bus Interface (Planned)
 
 - **Service**: `io.github.cosboard.Cosboard`
 - **Object Path**: `/io/github/cosboard/Cosboard`
@@ -117,20 +120,8 @@ cargo test
 
 ## Running
 
-### Main Application
-
 ```bash
-# Development
-cargo run --release
-
-# After building
-./target/release/cosboard
-```
-
-### System Tray Applet
-
-```bash
-# Development
+# Development (release mode recommended for performance)
 cargo run --release --bin cosboard-applet
 
 # After building
@@ -139,14 +130,26 @@ cargo run --release --bin cosboard-applet
 
 ## Installation
 
-### Using just
+### User Installation (Recommended)
+
+```bash
+./install-user.sh
+```
+
+This installs to user directories (no sudo required):
+- Binary to `~/.local/bin/cosboard-applet`
+- Desktop entry to `~/.local/share/applications/`
+- Icon to `~/.local/share/icons/hicolor/scalable/apps/`
+- AppStream metadata to `~/.local/share/metainfo/`
+
+### System Installation
 
 ```bash
 just install
 ```
 
-This installs:
-- Binaries to `/usr/bin/cosboard` and `/usr/bin/cosboard-applet`
+This installs to system directories (requires sudo):
+- Binary to `/usr/bin/cosboard-applet`
 - Desktop entries to `/usr/share/applications/`
 - AppStream metadata to `/usr/share/appdata/`
 - Icon to `/usr/share/icons/hicolor/scalable/apps/`
@@ -169,13 +172,10 @@ The applet will appear as a keyboard icon in your system tray.
 # Build release
 cargo build --release
 
-# Install binaries
-sudo install -Dm0755 target/release/cosboard /usr/bin/cosboard
+# Install binary
 sudo install -Dm0755 target/release/cosboard-applet /usr/bin/cosboard-applet
 
-# Install desktop entries
-sudo install -Dm0644 resources/io.github.cosboard.Cosboard.desktop \
-  /usr/share/applications/io.github.cosboard.Cosboard.desktop
+# Install desktop entry
 sudo install -Dm0644 resources/io.github.cosboard.Cosboard.Applet.desktop \
   /usr/share/applications/io.github.cosboard.Cosboard.Applet.desktop
 
@@ -186,85 +186,58 @@ sudo install -Dm0644 resources/icons/hicolor/scalable/apps/io.github.cosboard.Co
 # Install appstream metadata
 sudo install -Dm0644 resources/io.github.cosboard.Cosboard.metainfo.xml \
   /usr/share/appdata/io.github.cosboard.Cosboard.metainfo.xml
-
-# Install D-Bus service file (enables auto-start)
-sudo install -Dm0644 resources/io.github.cosboard.Cosboard.service \
-  /usr/share/dbus-1/services/io.github.cosboard.Cosboard.service
 ```
 
 ## Uninstallation
 
-### Using just
+### System Uninstall
 
 ```bash
 just uninstall
 ```
 
-### Manual Uninstallation
+### User Uninstall
 
 ```bash
-sudo rm -f /usr/bin/cosboard /usr/bin/cosboard-applet
-sudo rm -f /usr/share/applications/io.github.cosboard.Cosboard.desktop
-sudo rm -f /usr/share/applications/io.github.cosboard.Cosboard.Applet.desktop
-sudo rm -f /usr/share/icons/hicolor/scalable/apps/io.github.cosboard.Cosboard.svg
-sudo rm -f /usr/share/appdata/io.github.cosboard.Cosboard.metainfo.xml
-sudo rm -f /usr/share/dbus-1/services/io.github.cosboard.Cosboard.service
+rm -f ~/.local/bin/cosboard-applet
+rm -f ~/.local/share/applications/io.github.cosboard.Cosboard.Applet.desktop
+rm -f ~/.local/share/icons/hicolor/scalable/apps/io.github.cosboard.Cosboard.svg
+rm -f ~/.local/share/metainfo/io.github.cosboard.Cosboard.metainfo.xml
 ```
 
 ## Usage
 
-### From Application Menu
+### From Panel
 
-After installation, Cosboard appears in your application menu under Utilities/Accessibility.
+After installation:
+1. Right-click on the COSMIC panel
+2. Add the Cosboard applet to your panel
+3. Left-click the keyboard icon to toggle visibility
+4. Right-click for options (show/hide, toggle mode, quit)
 
 ### From Command Line
 
 ```bash
-# Start the keyboard
-cosboard
-
-# Start the applet (typically auto-started with the desktop)
 cosboard-applet
 ```
 
-### D-Bus Control
+### Development Workflow
 
-Control the keyboard programmatically:
+After making changes, reload the applet without restarting your session:
 
 ```bash
-# Toggle visibility
-dbus-send --session --type=method_call \
-  --dest=io.github.cosboard.Cosboard \
-  /io/github/cosboard/Cosboard \
-  io.github.cosboard.Cosboard.Toggle
-
-# Show keyboard
-dbus-send --session --type=method_call \
-  --dest=io.github.cosboard.Cosboard \
-  /io/github/cosboard/Cosboard \
-  io.github.cosboard.Cosboard.Show
-
-# Hide keyboard
-dbus-send --session --type=method_call \
-  --dest=io.github.cosboard.Cosboard \
-  /io/github/cosboard/Cosboard \
-  io.github.cosboard.Cosboard.Hide
-
-# Quit application
-dbus-send --session --type=method_call \
-  --dest=io.github.cosboard.Cosboard \
-  /io/github/cosboard/Cosboard \
-  io.github.cosboard.Cosboard.Quit
+# Build and reload in one step
+cargo build --release --bin cosboard-applet && ./reload-applet.sh
 ```
 
 ## Configuration
 
 ### State Persistence
 
-Window position and size are automatically saved using COSMIC's configuration system:
+Window state is automatically saved using COSMIC's configuration system:
 
 ```
-~/.config/cosmic/io.github.cosboard.Cosboard/v1/
+~/.config/cosmic/io.github.cosboard.Cosboard.Applet/v1/
 ```
 
 ### Default Window Settings
@@ -272,8 +245,9 @@ Window position and size are automatically saved using COSMIC's configuration sy
 | Setting | Value |
 |---------|-------|
 | Default Size | 800x300 pixels |
-| Minimum Size | 400x150 pixels |
-| Resize Border | 8 pixels |
+| Min/Max Width | 300-1920 pixels |
+| Min/Max Height | 150-500 pixels |
+| Resize Zone | 16 pixels |
 
 ## Project Structure
 
@@ -281,27 +255,24 @@ Window position and size are automatically saved using COSMIC's configuration sy
 cosboard/
 ├── Cargo.toml           # Package configuration
 ├── justfile             # Build automation recipes
-├── i18n.toml            # i18n configuration
+├── install-user.sh      # User installation script
+├── reload-applet.sh     # Development reload script
 ├── src/
-│   ├── main.rs          # Main application entry point
-│   ├── lib.rs           # Library crate for shared code
-│   ├── app.rs           # Main application model
+│   ├── lib.rs           # Library crate with shared modules
 │   ├── app_settings.rs  # Centralized constants
 │   ├── config.rs        # User configuration
 │   ├── state.rs         # Window state persistence
-│   ├── layer_shell.rs   # Wayland layer-shell support
+│   ├── layer_shell.rs   # Wayland layer-shell utilities
 │   ├── i18n.rs          # Localization support
-│   ├── dbus/
-│   │   └── mod.rs       # D-Bus interface
 │   ├── applet/
-│   │   └── mod.rs       # System tray applet
+│   │   └── mod.rs       # System tray applet with keyboard surface
 │   └── bin/
 │       └── applet.rs    # Applet binary entry point
 ├── i18n/
 │   └── en/
 │       └── cosboard.ftl # English translations
 └── resources/
-    ├── io.github.cosboard.Cosboard.desktop
+    ├── io.github.cosboard.Cosboard.Applet.desktop
     ├── io.github.cosboard.Cosboard.metainfo.xml
     └── icons/hicolor/scalable/apps/
         └── io.github.cosboard.Cosboard.svg
@@ -313,10 +284,12 @@ Cosboard development is organized into phases:
 
 ### Phase 1: MVP - Core Keyboard Applet (Current)
 - [x] Keyboard applet shell with window management
-- [x] System tray toggle
+- [x] System tray toggle with popup menu
+- [x] Docked and floating modes with drag/resize
+- [x] Window state persistence
 - [ ] JSON layout parser
 - [ ] Layout renderer
-- [ ] Basic key input
+- [ ] Basic key input (virtual keyboard protocol)
 - [ ] Default QWERTY layout
 
 ### Phase 2: Enhanced Key Actions
@@ -328,8 +301,8 @@ Cosboard development is organized into phases:
 ### Phase 3: Scripting and Advanced Behavior
 - Rhai scripting engine integration
 - Script-bound keys
-- Floating/draggable mode
 - Theming support
+- D-Bus interface for external control
 
 ### Phase 4: Prediction and Dictionary
 - Word prediction engine
@@ -351,11 +324,10 @@ Cosboard development is organized into phases:
 
 | Crate | Purpose |
 |-------|---------|
-| `libcosmic` | COSMIC widget toolkit |
-| `zbus` | D-Bus implementation |
+| `libcosmic` | COSMIC widget toolkit with applet and layer-shell support |
 | `tokio` | Async runtime |
 | `futures` | Async utilities |
-| `serde` | Serialization |
+| `serde` | Configuration serialization |
 | `i18n-embed` | Internationalization |
 | `tracing` | Logging |
 
