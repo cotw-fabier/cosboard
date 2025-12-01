@@ -2,6 +2,10 @@
 
 **A powerful, customizable soft keyboard for the COSMIC desktop**
 
+## Not yet Ready for Use
+
+This library is under development and doesn't yet fill its role. This is a hobby project with the intention to create a software keyboard in Cosmic Desktop Environment with the same capabilities as most commercial mobile keyboards.
+
 ## Introduction
 
 Cosboard is the first native soft keyboard solution for the COSMIC desktop environment. Built with libcosmic/Iced, it provides touch keyboard users with a fully customizable, JSON-driven layout system designed for accessibility, extensibility, and ease of use.
