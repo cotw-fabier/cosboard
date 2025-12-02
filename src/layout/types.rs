@@ -453,6 +453,18 @@ impl Default for Sizing {
     }
 }
 
+impl Sizing {
+    /// Returns the relative value for layout calculations.
+    /// For Relative sizing, returns the multiplier directly.
+    /// For Pixels sizing, returns 1.0 as a default unit for layout calculations.
+    pub fn as_relative(&self) -> f32 {
+        match self {
+            Sizing::Relative(r) => *r,
+            Sizing::Pixels(_) => 1.0,
+        }
+    }
+}
+
 /// Keyboard modifier keys.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
 pub enum Modifier {
@@ -516,10 +528,28 @@ pub enum Action {
     PanelSwitch(String),
 }
 
+/// Default value for `stickyrelease` field.
+///
+/// Returns `true` because the default behavior for sticky keys is one-shot mode,
+/// where the modifier releases automatically after the next key press.
+fn default_stickyrelease() -> bool {
+    true
+}
+
 /// A keyboard key definition.
 ///
 /// Contains the display label, key code, sizing, and alternative actions
 /// for modifiers and gestures.
+///
+/// # Sticky Key Behavior
+///
+/// The `sticky` and `stickyrelease` fields control modifier key behavior:
+///
+/// - `sticky: false` (default): Key must be held down to keep modifier active.
+/// - `sticky: true, stickyrelease: true` (default): One-shot mode. Modifier activates
+///   on tap and automatically releases after the next key press.
+/// - `sticky: true, stickyrelease: false`: Toggle mode. Modifier activates on tap
+///   and stays active until the same key is tapped again to deactivate.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Key {
     /// Display label shown on the key
@@ -553,9 +583,22 @@ pub struct Key {
     #[serde(default, skip_serializing_if = "HashMap::is_empty")]
     pub alternatives: HashMap<AlternativeKey, Action>,
 
-    /// Whether this is a sticky key (toggle mode)
+    /// Whether this is a sticky key (toggle mode).
+    ///
+    /// When `true`, the key can be tapped to toggle its state rather than
+    /// requiring it to be held down. Used primarily for modifier keys.
     #[serde(default)]
     pub sticky: bool,
+
+    /// Whether the sticky key should release after the next key press.
+    ///
+    /// Only relevant when `sticky` is `true`:
+    /// - `true` (default): One-shot behavior. The sticky modifier releases
+    ///   automatically after emitting a combo with the next key.
+    /// - `false`: Toggle behavior. The sticky modifier stays active until
+    ///   the user taps the modifier key again to deactivate it.
+    #[serde(default = "default_stickyrelease")]
+    pub stickyrelease: bool,
 }
 
 impl Default for Key {
@@ -570,6 +613,7 @@ impl Default for Key {
             min_height: None,
             alternatives: HashMap::new(),
             sticky: false,
+            stickyrelease: true, // Default to one-shot behavior
         }
     }
 }
@@ -953,6 +997,7 @@ mod tests {
         assert_eq!(key.code, KeyCode::Unicode('a'));
         assert_eq!(key.alternatives.len(), 2);
         assert!(!key.sticky);
+        assert!(key.stickyrelease); // Default should be true
     }
 
     /// Test 4: Sizing enum variants
@@ -1069,6 +1114,172 @@ mod tests {
         match panel_action {
             Action::PanelSwitch(s) => assert!(s.starts_with("panel(")),
             _ => panic!("Expected PanelSwitch variant"),
+        }
+    }
+
+    // ========================================================================
+    // Task Group 2 - Task 2.1: Focused tests for stickyrelease field (3-4 tests)
+    // ========================================================================
+
+    /// Test 1: stickyrelease defaults to true when field is omitted
+    #[test]
+    fn test_stickyrelease_default_value() {
+        // Test using Key::default()
+        let key = Key::default();
+        assert!(
+            key.stickyrelease,
+            "stickyrelease should default to true (one-shot behavior)"
+        );
+
+        // Test JSON deserialization without the field
+        let json = r#"{
+            "type": "key",
+            "label": "Shift",
+            "code": "Shift_L",
+            "sticky": true
+        }"#;
+        let cell: Cell = serde_json::from_str(json).expect("Should parse key without stickyrelease");
+        match cell {
+            Cell::Key(key) => {
+                assert!(key.sticky, "sticky should be true");
+                assert!(
+                    key.stickyrelease,
+                    "stickyrelease should default to true when omitted from JSON"
+                );
+            }
+            _ => panic!("Expected Key variant"),
+        }
+    }
+
+    /// Test 2: Explicit false value for stickyrelease is preserved
+    #[test]
+    fn test_stickyrelease_explicit_false() {
+        let json = r#"{
+            "type": "key",
+            "label": "Ctrl",
+            "code": "Control_L",
+            "sticky": true,
+            "stickyrelease": false
+        }"#;
+        let cell: Cell = serde_json::from_str(json).expect("Should parse key with stickyrelease: false");
+        match cell {
+            Cell::Key(key) => {
+                assert!(key.sticky, "sticky should be true");
+                assert!(
+                    !key.stickyrelease,
+                    "stickyrelease should be false when explicitly set to false"
+                );
+            }
+            _ => panic!("Expected Key variant"),
+        }
+    }
+
+    /// Test 3: JSON deserialization with and without stickyrelease field
+    #[test]
+    fn test_stickyrelease_json_deserialization() {
+        // Key with stickyrelease: true (explicit)
+        let json_true = r#"{
+            "type": "key",
+            "label": "Shift",
+            "code": "Shift_L",
+            "sticky": true,
+            "stickyrelease": true
+        }"#;
+        let cell_true: Cell = serde_json::from_str(json_true).expect("Should parse");
+        match cell_true {
+            Cell::Key(key) => {
+                assert!(key.stickyrelease, "Explicit true should be preserved");
+            }
+            _ => panic!("Expected Key variant"),
+        }
+
+        // Key with stickyrelease omitted (should default to true)
+        let json_omitted = r#"{
+            "type": "key",
+            "label": "Alt",
+            "code": "Alt_L",
+            "sticky": true
+        }"#;
+        let cell_omitted: Cell = serde_json::from_str(json_omitted).expect("Should parse");
+        match cell_omitted {
+            Cell::Key(key) => {
+                assert!(key.stickyrelease, "Omitted should default to true");
+            }
+            _ => panic!("Expected Key variant"),
+        }
+
+        // Non-sticky key (stickyrelease is still present but not relevant)
+        let json_non_sticky = r#"{
+            "type": "key",
+            "label": "A",
+            "code": "a"
+        }"#;
+        let cell_non_sticky: Cell = serde_json::from_str(json_non_sticky).expect("Should parse");
+        match cell_non_sticky {
+            Cell::Key(key) => {
+                assert!(!key.sticky, "Non-sticky key should have sticky = false");
+                assert!(
+                    key.stickyrelease,
+                    "stickyrelease defaults to true even for non-sticky keys"
+                );
+            }
+            _ => panic!("Expected Key variant"),
+        }
+    }
+
+    /// Test 4: sticky + stickyrelease behavior combinations
+    #[test]
+    fn test_sticky_stickyrelease_combinations() {
+        // Combination 1: sticky=false (hold behavior - stickyrelease is irrelevant)
+        let hold_key = Key {
+            label: "Shift".to_string(),
+            code: KeyCode::Keysym("Shift_L".to_string()),
+            sticky: false,
+            stickyrelease: true, // Irrelevant when sticky=false
+            ..Key::default()
+        };
+        assert!(!hold_key.sticky, "Hold mode: sticky should be false");
+
+        // Combination 2: sticky=true, stickyrelease=true (one-shot behavior)
+        let oneshot_key = Key {
+            label: "Shift".to_string(),
+            code: KeyCode::Keysym("Shift_L".to_string()),
+            sticky: true,
+            stickyrelease: true, // One-shot: releases after next key
+            ..Key::default()
+        };
+        assert!(oneshot_key.sticky, "One-shot mode: sticky should be true");
+        assert!(
+            oneshot_key.stickyrelease,
+            "One-shot mode: stickyrelease should be true"
+        );
+
+        // Combination 3: sticky=true, stickyrelease=false (toggle behavior)
+        let toggle_key = Key {
+            label: "Ctrl".to_string(),
+            code: KeyCode::Keysym("Control_L".to_string()),
+            sticky: true,
+            stickyrelease: false, // Toggle: stays until manually toggled off
+            ..Key::default()
+        };
+        assert!(toggle_key.sticky, "Toggle mode: sticky should be true");
+        assert!(
+            !toggle_key.stickyrelease,
+            "Toggle mode: stickyrelease should be false"
+        );
+
+        // Verify serialization roundtrip preserves values
+        let json = serde_json::to_string(&Cell::Key(toggle_key.clone())).expect("Should serialize");
+        let parsed: Cell = serde_json::from_str(&json).expect("Should deserialize");
+        match parsed {
+            Cell::Key(key) => {
+                assert!(key.sticky, "Roundtrip: sticky should be preserved");
+                assert!(
+                    !key.stickyrelease,
+                    "Roundtrip: stickyrelease=false should be preserved"
+                );
+            }
+            _ => panic!("Expected Key variant"),
         }
     }
 }

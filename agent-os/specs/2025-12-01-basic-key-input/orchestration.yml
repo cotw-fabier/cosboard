@@ -1,0 +1,17 @@
+task_groups:
+  - name: Input Module Architecture
+    claude_code_subagent: implementer
+  - name: Layout Schema Updates
+    claude_code_subagent: implementer
+  - name: Virtual Keyboard Protocol Integration
+    claude_code_subagent: implementer
+  - name: Modifier State Tracking in Renderer
+    claude_code_subagent: implementer
+  - name: Key Press Event Flow
+    claude_code_subagent: implementer
+  - name: Visual Modifier State Indication
+    claude_code_subagent: implementer
+  - name: End-to-End Integration
+    claude_code_subagent: implementer
+  - name: Test Review and Gap Analysis
+    claude_code_subagent: implementation-verifier

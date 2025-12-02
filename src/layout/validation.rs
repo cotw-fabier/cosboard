@@ -34,8 +34,11 @@ pub fn validate_layout(mut layout: Layout) -> Result<ParseResult<Layout>, ParseE
     // Validate panel references (this can add warnings)
     validate_panel_references(&layout, &mut warnings)?;
 
-    // Detect circular references (fatal error if found)
-    detect_circular_references(&layout)?;
+    // NOTE: Circular reference detection is disabled for panel_refs because they
+    // are navigation buttons, not structural dependencies. Bidirectional navigation
+    // (e.g., symbols <-> symbols2) is intentional and valid for keyboard layouts.
+    // Panel switching is user-controlled and cannot cause infinite loops.
+    // detect_circular_references(&layout)?;
 
     // Enforce max nesting depth and update panel depths
     enforce_max_nesting_depth(&mut layout)?;
@@ -418,10 +421,11 @@ fn detect_circular_references_dfs(
 pub fn enforce_max_nesting_depth(layout: &mut Layout) -> Result<(), ParseError> {
     // Calculate depth for all panels reachable from the default
     let mut depths: HashMap<String, u8> = HashMap::new();
+    let mut visiting: HashSet<String> = HashSet::new();
 
     // First, calculate depths for all panels
     for panel_id in layout.panels.keys() {
-        let depth = calculate_panel_depth(layout, panel_id, &mut HashMap::new())?;
+        let depth = calculate_panel_depth(layout, panel_id, &mut depths, &mut visiting)?;
         depths.insert(panel_id.clone(), depth);
     }
 
@@ -436,14 +440,25 @@ pub fn enforce_max_nesting_depth(layout: &mut Layout) -> Result<(), ParseError> 
 }
 
 /// Calculates the nesting depth for a panel recursively.
+///
+/// Handles cycles by tracking panels currently being visited. When a cycle
+/// is detected, we return 0 for that reference to break the recursion.
+/// This allows bidirectional panel navigation (e.g., symbols <-> symbols2).
 fn calculate_panel_depth(
     layout: &Layout,
     panel_id: &str,
     memo: &mut HashMap<String, u8>,
+    visiting: &mut HashSet<String>,
 ) -> Result<u8, ParseError> {
-    // Check memo first
+    // Check memo first (already calculated)
     if let Some(&depth) = memo.get(panel_id) {
         return Ok(depth);
+    }
+
+    // Check if we're already visiting this panel (cycle detected)
+    // This allows bidirectional navigation - just return 0 to break the cycle
+    if visiting.contains(panel_id) {
+        return Ok(0);
     }
 
     let panel = match layout.panels.get(panel_id) {
@@ -451,20 +466,26 @@ fn calculate_panel_depth(
         None => return Ok(0), // Panel doesn't exist, depth is 0
     };
 
+    // Mark this panel as being visited
+    visiting.insert(panel_id.to_string());
+
     let mut max_child_depth = 0;
 
     // Find the maximum depth of any referenced panel
     for row in &panel.rows {
         for cell in &row.cells {
             if let Cell::PanelRef(panel_ref) = cell {
-                let child_depth = calculate_panel_depth(layout, &panel_ref.panel_id, memo)?;
+                let child_depth =
+                    calculate_panel_depth(layout, &panel_ref.panel_id, memo, visiting)?;
                 max_child_depth = max_child_depth.max(child_depth);
             }
         }
     }
 
+    // Done visiting this panel
+    visiting.remove(panel_id);
 
-    // Actually, let's fix this properly:
+    // Calculate depth:
     // - A panel with no PanelRef children has depth 0
     // - A panel with PanelRef children has depth = 1 + max(child depths)
     let has_refs = has_panel_refs(panel);

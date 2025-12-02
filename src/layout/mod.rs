@@ -3,7 +3,7 @@
 //! JSON Layout Parser for Cosboard keyboard layouts.
 //!
 //! This module provides functionality for loading keyboard layout definitions from JSON files,
-//! supporting hierarchical structures (Layout → Panels → Rows → Keys), layout inheritance,
+//! supporting hierarchical structures (Layout -> Panels -> Rows -> Keys), layout inheritance,
 //! widgets, embeddable panels, and comprehensive validation with helpful error messages.
 //!
 //! # Features
@@ -397,7 +397,7 @@ mod tests {
         let _swipe = SwipeDirection::Up;
         let _action = Action::Character('a');
 
-        // Verify structs are accessible
+        // Verify structs are accessible (using struct update syntax for defaults)
         let _key = Key {
             label: "A".to_string(),
             code: KeyCode::Unicode('a'),
@@ -408,6 +408,7 @@ mod tests {
             min_height: None,
             alternatives: std::collections::HashMap::new(),
             sticky: false,
+            ..Key::default()
         };
 
         let _widget = Widget {
@@ -1011,9 +1012,11 @@ mod tests {
         }
     }
 
-    /// Strategic Test 7: Panel with circular panel reference detection
+    /// Strategic Test 7: Bidirectional panel navigation is allowed
     ///
-    /// Tests that circular panel references are detected during validation.
+    /// Tests that bidirectional panel references (for navigation) are now allowed.
+    /// Panel refs are navigation buttons, not structural dependencies, so
+    /// "circular" patterns like main <-> symbols are valid.
     #[test]
     fn test_integration_circular_panel_reference_detection() {
         let test_json = r#"{
@@ -1063,15 +1066,13 @@ mod tests {
             }
         }"#;
 
+        // Bidirectional panel navigation is now allowed - panel refs are navigation
+        // buttons, not structural dependencies
         let result = parse_layout_from_string(test_json);
-        assert!(result.is_err(), "Should detect circular panel references");
+        assert!(result.is_ok(), "Bidirectional panel navigation should be allowed");
 
-        match result.unwrap_err() {
-            ParseError::CircularReference { .. } => {
-                // Expected error type
-            }
-            e => panic!("Expected CircularReference error, got: {:?}", e),
-        }
+        let parse_result = result.unwrap();
+        assert_eq!(parse_result.layout.panels.len(), 3);
     }
 
     /// Strategic Test 8: Invalid default panel reference
@@ -1162,12 +1163,12 @@ mod tests {
                             "cells": [
                                 {{
                                     "type": "key",
-                                    "label": "α",
-                                    "code": "α",
+                                    "label": "a",
+                                    "code": "a",
                                     "identifier": "key_a",
                                     "width": 1.5,
                                     "alternatives": {{
-                                        "Shift": "Α",
+                                        "Shift": "A",
                                         "Up": "1"
                                     }}
                                 }},
@@ -1230,7 +1231,7 @@ mod tests {
         // Verify key override with merged alternatives
         match &main_panel.rows[0].cells[0] {
             Cell::Key(key) => {
-                assert_eq!(key.label, "α");
+                assert_eq!(key.label, "a");
                 assert_eq!(key.alternatives.len(), 2); // Shift and Up
             }
             _ => panic!("Expected Key cell"),

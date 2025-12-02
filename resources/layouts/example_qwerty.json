@@ -1,6 +1,6 @@
 {
   "name": "Example QWERTY Layout",
-  "description": "A comprehensive example keyboard layout demonstrating all JSON schema features",
+  "description": "A comprehensive QWERTY keyboard layout with symbols and numbers panels",
   "author": "Cosboard Team",
   "language": "en",
   "locale": "en_US",
@@ -48,7 +48,7 @@
               "alternatives": {
                 "Shift": "E",
                 "Up": "3",
-                "Left": "€"
+                "Left": "\u20ac"
               }
             },
             {
@@ -74,6 +74,68 @@
                 "Shift": "T",
                 "Up": "5"
               }
+            },
+            {
+              "type": "key",
+              "label": "Y",
+              "code": "y",
+              "identifier": "key_y",
+              "width": 1.0,
+              "height": 1.0,
+              "alternatives": {
+                "Shift": "Y",
+                "Up": "6"
+              }
+            },
+            {
+              "type": "key",
+              "label": "U",
+              "code": "u",
+              "identifier": "key_u",
+              "width": 1.0,
+              "height": 1.0,
+              "alternatives": {
+                "Shift": "U",
+                "Up": "7",
+                "Left": "\u00fc"
+              }
+            },
+            {
+              "type": "key",
+              "label": "I",
+              "code": "i",
+              "identifier": "key_i",
+              "width": 1.0,
+              "height": 1.0,
+              "alternatives": {
+                "Shift": "I",
+                "Up": "8"
+              }
+            },
+            {
+              "type": "key",
+              "label": "O",
+              "code": "o",
+              "identifier": "key_o",
+              "width": 1.0,
+              "height": 1.0,
+              "alternatives": {
+                "Shift": "O",
+                "Up": "9",
+                "Left": "\u00f6"
+              }
+            },
+            {
+              "type": "key",
+              "label": "P",
+              "code": "p",
+              "identifier": "key_p",
+              "width": 1.0,
+              "height": 1.0,
+              "alternatives": {
+                "Shift": "P",
+                "Up": "0"
+              }
             }
           ]
         },
@@ -88,7 +150,9 @@
               "height": 1.0,
               "alternatives": {
                 "Shift": "A",
-                "Up": "@"
+                "Up": "@",
+                "Left": "\u00e4",
+                "Right": "\u00e0"
               }
             },
             {
@@ -100,7 +164,8 @@
               "height": 1.0,
               "alternatives": {
                 "Shift": "S",
-                "Up": "#"
+                "Up": "#",
+                "Left": "\u00df"
               }
             },
             {
@@ -114,6 +179,78 @@
                 "Shift": "D",
                 "Up": "$"
               }
+            },
+            {
+              "type": "key",
+              "label": "F",
+              "code": "f",
+              "identifier": "key_f",
+              "width": 1.0,
+              "height": 1.0,
+              "alternatives": {
+                "Shift": "F",
+                "Up": "%"
+              }
+            },
+            {
+              "type": "key",
+              "label": "G",
+              "code": "g",
+              "identifier": "key_g",
+              "width": 1.0,
+              "height": 1.0,
+              "alternatives": {
+                "Shift": "G",
+                "Up": "&"
+              }
+            },
+            {
+              "type": "key",
+              "label": "H",
+              "code": "h",
+              "identifier": "key_h",
+              "width": 1.0,
+              "height": 1.0,
+              "alternatives": {
+                "Shift": "H",
+                "Up": "*"
+              }
+            },
+            {
+              "type": "key",
+              "label": "J",
+              "code": "j",
+              "identifier": "key_j",
+              "width": 1.0,
+              "height": 1.0,
+              "alternatives": {
+                "Shift": "J",
+                "Up": "("
+              }
+            },
+            {
+              "type": "key",
+              "label": "K",
+              "code": "k",
+              "identifier": "key_k",
+              "width": 1.0,
+              "height": 1.0,
+              "alternatives": {
+                "Shift": "K",
+                "Up": ")"
+              }
+            },
+            {
+              "type": "key",
+              "label": "L",
+              "code": "l",
+              "identifier": "key_l",
+              "width": 1.0,
+              "height": 1.0,
+              "alternatives": {
+                "Shift": "L",
+                "Up": "\u00a3"
+              }
             }
           ]
         },
@@ -126,7 +263,8 @@
               "identifier": "key_shift",
               "width": 1.5,
               "height": 1.0,
-              "sticky": true
+              "sticky": true,
+              "stickyrelease": true
             },
             {
               "type": "key",
@@ -152,7 +290,64 @@
             },
             {
               "type": "key",
-              "label": "⌫",
+              "label": "C",
+              "code": "c",
+              "identifier": "key_c",
+              "width": 1.0,
+              "height": 1.0,
+              "alternatives": {
+                "Shift": "C",
+                "Left": "\u00e7"
+              }
+            },
+            {
+              "type": "key",
+              "label": "V",
+              "code": "v",
+              "identifier": "key_v",
+              "width": 1.0,
+              "height": 1.0,
+              "alternatives": {
+                "Shift": "V"
+              }
+            },
+            {
+              "type": "key",
+              "label": "B",
+              "code": "b",
+              "identifier": "key_b",
+              "width": 1.0,
+              "height": 1.0,
+              "alternatives": {
+                "Shift": "B"
+              }
+            },
+            {
+              "type": "key",
+              "label": "N",
+              "code": "n",
+              "identifier": "key_n",
+              "width": 1.0,
+              "height": 1.0,
+              "alternatives": {
+                "Shift": "N",
+                "Left": "\u00f1"
+              }
+            },
+            {
+              "type": "key",
+              "label": "M",
+              "code": "m",
+              "identifier": "key_m",
+              "width": 1.0,
+              "height": 1.0,
+              "alternatives": {
+                "Shift": "M"
+              }
+            },
+            {
+              "type": "key",
+              "label": "\u232b",
               "code": "BackSpace",
               "identifier": "key_backspace",
               "width": 1.5,
@@ -163,6 +358,22 @@
         {
           "cells": [
             {
+              "type": "panel_ref",
+              "panel_id": "symbols",
+              "width": 1.5,
+              "height": 1.0
+            },
+            {
+              "type": "key",
+              "label": "Ctrl",
+              "code": "Control_L",
+              "identifier": "key_ctrl",
+              "width": 1.0,
+              "height": 1.0,
+              "sticky": true,
+              "stickyrelease": false
+            },
+            {
               "type": "key",
               "label": "Space",
               "code": " ",
@@ -172,7 +383,20 @@
             },
             {
               "type": "key",
-              "label": "⏎",
+              "label": ".",
+              "code": "period",
+              "identifier": "key_period",
+              "width": 1.0,
+              "height": 1.0,
+              "alternatives": {
+                "Up": ":",
+                "Left": ">",
+                "Right": "\u2026"
+              }
+            },
+            {
+              "type": "key",
+              "label": "\u23ce",
               "code": "Return",
               "identifier": "key_enter",
               "width": 1.5,
@@ -195,7 +419,10 @@
               "code": "1",
               "identifier": "sym_1",
               "width": 1.0,
-              "height": 1.0
+              "height": 1.0,
+              "alternatives": {
+                "Up": "!"
+              }
             },
             {
               "type": "key",
@@ -203,7 +430,10 @@
               "code": "2",
               "identifier": "sym_2",
               "width": 1.0,
-              "height": 1.0
+              "height": 1.0,
+              "alternatives": {
+                "Up": "@"
+              }
             },
             {
               "type": "key",
@@ -211,24 +441,87 @@
               "code": "3",
               "identifier": "sym_3",
               "width": 1.0,
-              "height": 1.0
-            }
-          ]
-        }
-      ]
-    },
-    "with_widgets": {
-      "id": "with_widgets",
-      "padding": 8.0,
-      "margin": 4.0,
-      "rows": [
-        {
-          "cells": [
+              "height": 1.0,
+              "alternatives": {
+                "Up": "#"
+              }
+            },
             {
-              "type": "widget",
-              "widget_type": "prediction_bar",
-              "width": 10.0,
-              "height": "40px"
+              "type": "key",
+              "label": "4",
+              "code": "4",
+              "identifier": "sym_4",
+              "width": 1.0,
+              "height": 1.0,
+              "alternatives": {
+                "Up": "$"
+              }
+            },
+            {
+              "type": "key",
+              "label": "5",
+              "code": "5",
+              "identifier": "sym_5",
+              "width": 1.0,
+              "height": 1.0,
+              "alternatives": {
+                "Up": "%"
+              }
+            },
+            {
+              "type": "key",
+              "label": "6",
+              "code": "6",
+              "identifier": "sym_6",
+              "width": 1.0,
+              "height": 1.0,
+              "alternatives": {
+                "Up": "^"
+              }
+            },
+            {
+              "type": "key",
+              "label": "7",
+              "code": "7",
+              "identifier": "sym_7",
+              "width": 1.0,
+              "height": 1.0,
+              "alternatives": {
+                "Up": "&"
+              }
+            },
+            {
+              "type": "key",
+              "label": "8",
+              "code": "8",
+              "identifier": "sym_8",
+              "width": 1.0,
+              "height": 1.0,
+              "alternatives": {
+                "Up": "*"
+              }
+            },
+            {
+              "type": "key",
+              "label": "9",
+              "code": "9",
+              "identifier": "sym_9",
+              "width": 1.0,
+              "height": 1.0,
+              "alternatives": {
+                "Up": "("
+              }
+            },
+            {
+              "type": "key",
+              "label": "0",
+              "code": "0",
+              "identifier": "sym_0",
+              "width": 1.0,
+              "height": 1.0,
+              "alternatives": {
+                "Up": ")"
+              }
             }
           ]
         },
@@ -236,17 +529,531 @@
           "cells": [
             {
               "type": "key",
-              "label": "Q",
-              "code": "q",
-              "identifier": "widget_q",
+              "label": "-",
+              "code": "minus",
+              "identifier": "sym_minus",
+              "width": 1.0,
+              "height": 1.0,
+              "alternatives": {
+                "Up": "_",
+                "Left": "\u2013",
+                "Right": "\u2014"
+              }
+            },
+            {
+              "type": "key",
+              "label": "/",
+              "code": "slash",
+              "identifier": "sym_slash",
+              "width": 1.0,
+              "height": 1.0,
+              "alternatives": {
+                "Up": "\\",
+                "Left": "|"
+              }
+            },
+            {
+              "type": "key",
+              "label": ":",
+              "code": "colon",
+              "identifier": "sym_colon",
+              "width": 1.0,
+              "height": 1.0,
+              "alternatives": {
+                "Up": ";"
+              }
+            },
+            {
+              "type": "key",
+              "label": ";",
+              "code": "semicolon",
+              "identifier": "sym_semicolon",
               "width": 1.0,
               "height": 1.0
             },
             {
-              "type": "widget",
-              "widget_type": "trackpad",
-              "width": 3.0,
-              "height": 2.0
+              "type": "key",
+              "label": "(",
+              "code": "parenleft",
+              "identifier": "sym_lparen",
+              "width": 1.0,
+              "height": 1.0,
+              "alternatives": {
+                "Up": "[",
+                "Left": "{"
+              }
+            },
+            {
+              "type": "key",
+              "label": ")",
+              "code": "parenright",
+              "identifier": "sym_rparen",
+              "width": 1.0,
+              "height": 1.0,
+              "alternatives": {
+                "Up": "]",
+                "Left": "}"
+              }
+            },
+            {
+              "type": "key",
+              "label": "$",
+              "code": "dollar",
+              "identifier": "sym_dollar",
+              "width": 1.0,
+              "height": 1.0,
+              "alternatives": {
+                "Up": "\u20ac",
+                "Left": "\u00a3",
+                "Right": "\u00a5"
+              }
+            },
+            {
+              "type": "key",
+              "label": "&",
+              "code": "ampersand",
+              "identifier": "sym_amp",
+              "width": 1.0,
+              "height": 1.0
+            },
+            {
+              "type": "key",
+              "label": "@",
+              "code": "at",
+              "identifier": "sym_at",
+              "width": 1.0,
+              "height": 1.0
+            },
+            {
+              "type": "key",
+              "label": "\"",
+              "code": "quotedbl",
+              "identifier": "sym_quote",
+              "width": 1.0,
+              "height": 1.0,
+              "alternatives": {
+                "Up": "'",
+                "Left": "\u201c",
+                "Right": "\u201d"
+              }
+            }
+          ]
+        },
+        {
+          "cells": [
+            {
+              "type": "panel_ref",
+              "panel_id": "symbols2",
+              "width": 1.5,
+              "height": 1.0
+            },
+            {
+              "type": "key",
+              "label": ".",
+              "code": "period",
+              "identifier": "sym_period",
+              "width": 1.0,
+              "height": 1.0,
+              "alternatives": {
+                "Up": "\u2026"
+              }
+            },
+            {
+              "type": "key",
+              "label": ",",
+              "code": "comma",
+              "identifier": "sym_comma",
+              "width": 1.0,
+              "height": 1.0
+            },
+            {
+              "type": "key",
+              "label": "?",
+              "code": "question",
+              "identifier": "sym_question",
+              "width": 1.0,
+              "height": 1.0,
+              "alternatives": {
+                "Up": "\u00bf"
+              }
+            },
+            {
+              "type": "key",
+              "label": "!",
+              "code": "exclam",
+              "identifier": "sym_exclaim",
+              "width": 1.0,
+              "height": 1.0,
+              "alternatives": {
+                "Up": "\u00a1"
+              }
+            },
+            {
+              "type": "key",
+              "label": "'",
+              "code": "apostrophe",
+              "identifier": "sym_apostrophe",
+              "width": 1.0,
+              "height": 1.0,
+              "alternatives": {
+                "Up": "`",
+                "Left": "\u2018",
+                "Right": "\u2019"
+              }
+            },
+            {
+              "type": "key",
+              "label": "\u232b",
+              "code": "BackSpace",
+              "identifier": "sym_backspace",
+              "width": 1.5,
+              "height": 1.0
+            }
+          ]
+        },
+        {
+          "cells": [
+            {
+              "type": "panel_ref",
+              "panel_id": "main",
+              "width": 1.5,
+              "height": 1.0
+            },
+            {
+              "type": "key",
+              "label": ",",
+              "code": "comma",
+              "identifier": "sym_comma2",
+              "width": 1.0,
+              "height": 1.0
+            },
+            {
+              "type": "key",
+              "label": "Space",
+              "code": " ",
+              "identifier": "sym_space",
+              "width": 4.0,
+              "height": 1.0
+            },
+            {
+              "type": "key",
+              "label": ".",
+              "code": "period",
+              "identifier": "sym_period2",
+              "width": 1.0,
+              "height": 1.0
+            },
+            {
+              "type": "key",
+              "label": "\u23ce",
+              "code": "Return",
+              "identifier": "sym_enter",
+              "width": 1.5,
+              "height": 1.0
+            }
+          ]
+        }
+      ]
+    },
+    "symbols2": {
+      "id": "symbols2",
+      "padding": 8.0,
+      "margin": 4.0,
+      "rows": [
+        {
+          "cells": [
+            {
+              "type": "key",
+              "label": "~",
+              "code": "asciitilde",
+              "identifier": "sym2_tilde",
+              "width": 1.0,
+              "height": 1.0
+            },
+            {
+              "type": "key",
+              "label": "`",
+              "code": "grave",
+              "identifier": "sym2_grave",
+              "width": 1.0,
+              "height": 1.0
+            },
+            {
+              "type": "key",
+              "label": "|",
+              "code": "bar",
+              "identifier": "sym2_pipe",
+              "width": 1.0,
+              "height": 1.0
+            },
+            {
+              "type": "key",
+              "label": "\u2022",
+              "code": "U+2022",
+              "identifier": "sym2_bullet",
+              "width": 1.0,
+              "height": 1.0
+            },
+            {
+              "type": "key",
+              "label": "\u221a",
+              "code": "U+221A",
+              "identifier": "sym2_sqrt",
+              "width": 1.0,
+              "height": 1.0
+            },
+            {
+              "type": "key",
+              "label": "\u03c0",
+              "code": "U+03C0",
+              "identifier": "sym2_pi",
+              "width": 1.0,
+              "height": 1.0
+            },
+            {
+              "type": "key",
+              "label": "\u00f7",
+              "code": "U+00F7",
+              "identifier": "sym2_divide",
+              "width": 1.0,
+              "height": 1.0
+            },
+            {
+              "type": "key",
+              "label": "\u00d7",
+              "code": "U+00D7",
+              "identifier": "sym2_multiply",
+              "width": 1.0,
+              "height": 1.0
+            },
+            {
+              "type": "key",
+              "label": "\u00b6",
+              "code": "U+00B6",
+              "identifier": "sym2_pilcrow",
+              "width": 1.0,
+              "height": 1.0
+            },
+            {
+              "type": "key",
+              "label": "\u2206",
+              "code": "U+2206",
+              "identifier": "sym2_delta",
+              "width": 1.0,
+              "height": 1.0
+            }
+          ]
+        },
+        {
+          "cells": [
+            {
+              "type": "key",
+              "label": "\u00a3",
+              "code": "U+00A3",
+              "identifier": "sym2_pound",
+              "width": 1.0,
+              "height": 1.0
+            },
+            {
+              "type": "key",
+              "label": "\u20ac",
+              "code": "U+20AC",
+              "identifier": "sym2_euro",
+              "width": 1.0,
+              "height": 1.0
+            },
+            {
+              "type": "key",
+              "label": "\u00a5",
+              "code": "U+00A5",
+              "identifier": "sym2_yen",
+              "width": 1.0,
+              "height": 1.0
+            },
+            {
+              "type": "key",
+              "label": "\u00a2",
+              "code": "U+00A2",
+              "identifier": "sym2_cent",
+              "width": 1.0,
+              "height": 1.0
+            },
+            {
+              "type": "key",
+              "label": "^",
+              "code": "asciicircum",
+              "identifier": "sym2_caret",
+              "width": 1.0,
+              "height": 1.0
+            },
+            {
+              "type": "key",
+              "label": "\u00b0",
+              "code": "U+00B0",
+              "identifier": "sym2_degree",
+              "width": 1.0,
+              "height": 1.0
+            },
+            {
+              "type": "key",
+              "label": "=",
+              "code": "equal",
+              "identifier": "sym2_equal",
+              "width": 1.0,
+              "height": 1.0,
+              "alternatives": {
+                "Up": "\u2260",
+                "Left": "\u2248"
+              }
+            },
+            {
+              "type": "key",
+              "label": "{",
+              "code": "braceleft",
+              "identifier": "sym2_lbrace",
+              "width": 1.0,
+              "height": 1.0
+            },
+            {
+              "type": "key",
+              "label": "}",
+              "code": "braceright",
+              "identifier": "sym2_rbrace",
+              "width": 1.0,
+              "height": 1.0
+            },
+            {
+              "type": "key",
+              "label": "\\",
+              "code": "backslash",
+              "identifier": "sym2_backslash",
+              "width": 1.0,
+              "height": 1.0
+            }
+          ]
+        },
+        {
+          "cells": [
+            {
+              "type": "panel_ref",
+              "panel_id": "symbols",
+              "width": 1.5,
+              "height": 1.0
+            },
+            {
+              "type": "key",
+              "label": "%",
+              "code": "percent",
+              "identifier": "sym2_percent",
+              "width": 1.0,
+              "height": 1.0,
+              "alternatives": {
+                "Up": "\u2030"
+              }
+            },
+            {
+              "type": "key",
+              "label": "\u00a9",
+              "code": "U+00A9",
+              "identifier": "sym2_copyright",
+              "width": 1.0,
+              "height": 1.0
+            },
+            {
+              "type": "key",
+              "label": "\u00ae",
+              "code": "U+00AE",
+              "identifier": "sym2_registered",
+              "width": 1.0,
+              "height": 1.0
+            },
+            {
+              "type": "key",
+              "label": "\u2122",
+              "code": "U+2122",
+              "identifier": "sym2_trademark",
+              "width": 1.0,
+              "height": 1.0
+            },
+            {
+              "type": "key",
+              "label": "\u2713",
+              "code": "U+2713",
+              "identifier": "sym2_check",
+              "width": 1.0,
+              "height": 1.0
+            },
+            {
+              "type": "key",
+              "label": "[",
+              "code": "bracketleft",
+              "identifier": "sym2_lbracket",
+              "width": 1.0,
+              "height": 1.0
+            },
+            {
+              "type": "key",
+              "label": "]",
+              "code": "bracketright",
+              "identifier": "sym2_rbracket",
+              "width": 1.0,
+              "height": 1.0
+            },
+            {
+              "type": "key",
+              "label": "\u232b",
+              "code": "BackSpace",
+              "identifier": "sym2_backspace",
+              "width": 1.5,
+              "height": 1.0
+            }
+          ]
+        },
+        {
+          "cells": [
+            {
+              "type": "panel_ref",
+              "panel_id": "main",
+              "width": 1.5,
+              "height": 1.0
+            },
+            {
+              "type": "key",
+              "label": "<",
+              "code": "less",
+              "identifier": "sym2_less",
+              "width": 1.0,
+              "height": 1.0,
+              "alternatives": {
+                "Up": "\u2264"
+              }
+            },
+            {
+              "type": "key",
+              "label": "Space",
+              "code": " ",
+              "identifier": "sym2_space",
+              "width": 4.0,
+              "height": 1.0
+            },
+            {
+              "type": "key",
+              "label": ">",
+              "code": "greater",
+              "identifier": "sym2_greater",
+              "width": 1.0,
+              "height": 1.0,
+              "alternatives": {
+                "Up": "\u2265"
+              }
+            },
+            {
+              "type": "key",
+              "label": "\u23ce",
+              "code": "Return",
+              "identifier": "sym2_enter",
+              "width": 1.5,
+              "height": 1.0
             }
           ]
         }

@@ -30,6 +30,13 @@ tokio = { version = "1.48.0", features = ["full"] }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 
+# Wayland protocol dependencies for virtual keyboard support (Task Group 3)
+wayland-client = "0.31"
+wayland-protocols-misc = { version = "0.3", features = ["client"] }
+
+# XKB keysym handling for keycode conversion (Task Group 3)
+xkbcommon = "0.8"
+
 [dependencies.libcosmic]
 git = "https://github.com/pop-os/libcosmic.git"
 features = [

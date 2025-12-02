@@ -23,12 +23,19 @@
 //! ```
 
 use crate::fl;
+use crate::input::{parse_keycode, keycodes, ResolvedKeycode, VirtualKeyboard};
+use crate::layout::{parse_layout_file, Cell, Key, KeyCode, Modifier};
+use crate::renderer::{
+    render_animated_panels, render_current_toast, render_keyboard_with_toast, get_scale_factor,
+    KeyboardRenderer, RendererMessage, ToastSeverity,
+    ANIMATION_FRAME_INTERVAL_MS, LONG_PRESS_TIMER_INTERVAL_MS, TOAST_TIMER_INTERVAL_MS,
+};
 use crate::state::WindowState;
-use std::time::Instant;
 use cosmic::app::{Core, Task};
 use cosmic::cosmic_config::{self, CosmicConfigEntry};
 use cosmic::iced::event;
 use cosmic::iced::mouse;
+use cosmic::iced::time;
 use cosmic::iced::window::{self, Id};
 use cosmic::iced::{Event, Length, Limits, Point};
 use cosmic::iced_runtime::platform_specific::wayland::layer_surface::{
@@ -41,9 +48,14 @@ use cosmic::iced_winit::platform_specific::wayland::commands::layer_surface::{
 use cosmic::surface::action::{app_popup, destroy_popup};
 use cosmic::widget::{self, container, divider, list_column, mouse_area, Space};
 use cosmic::Element;
+use cosmic::Theme;
+use std::time::{Duration, Instant};
 
 /// The applet Application ID (distinct from the main application).
 pub const APPLET_ID: &str = "io.github.cosboard.Cosboard.Applet";
+
+/// Default layout file path (relative to the executable or absolute).
+const DEFAULT_LAYOUT_PATH: &str = "resources/layouts/example_qwerty.json";
 
 /// Minimum keyboard width in floating mode.
 const MIN_WIDTH: f32 = 300.0;
@@ -109,6 +121,10 @@ pub struct AppletModel {
     last_preview_margin_bottom: i32,
     /// Last time we sent a preview update (for 100ms debounce).
     last_preview_update: Option<Instant>,
+    /// Keyboard renderer for rendering the layout (Task 7.1).
+    keyboard_renderer: Option<KeyboardRenderer>,
+    /// Virtual keyboard for emitting key events (Task Group 5).
+    virtual_keyboard: VirtualKeyboard,
 }
 
 impl Default for AppletModel {
@@ -134,6 +150,8 @@ impl Default for AppletModel {
             last_preview_margin_right: 0,
             last_preview_margin_bottom: 0,
             last_preview_update: None,
+            keyboard_renderer: None,
+            virtual_keyboard: VirtualKeyboard::new(),
         }
     }
 }
@@ -177,6 +195,25 @@ pub enum Message {
     PreviewSurfaceCreated(window::Id),
     /// Preview surface was closed.
     PreviewSurfaceClosed(window::Id),
+    // ========================================================================
+    // Renderer Messages (Task 7.4)
+    // ========================================================================
+    /// A key was pressed on the rendered keyboard.
+    KeyPressed(String),
+    /// A key was released on the rendered keyboard.
+    KeyReleased(String),
+    /// Switch to a different panel.
+    SwitchPanel(String),
+    /// Animation frame tick for panel transitions.
+    AnimationTick,
+    /// Long press timer tick for detecting long presses.
+    LongPressTimerTick,
+    /// Show a toast notification.
+    ShowToast(String, ToastSeverity),
+    /// Dismiss the current toast notification.
+    DismissToast,
+    /// Toast timer tick for auto-dismiss.
+    ToastTimerTick,
 }
 
 impl AppletModel {
@@ -225,6 +262,367 @@ impl AppletModel {
         tracing::debug!("Creating preview surface: {:?}", id);
 
         get_layer_surface(settings)
+    }
+
+    /// Load the keyboard layout and create the renderer (Task 7.2).
+    ///
+    /// Attempts to load the layout from the default path. On success,
+    /// creates a KeyboardRenderer. On failure, queues an error toast.
+    fn load_keyboard_layout(&mut self) {
+        // Try to find the layout file
+        let layout_path = Self::find_layout_path();
+
+        match parse_layout_file(&layout_path) {
+            Ok(result) => {
+                // Log any warnings from parsing
+                if result.has_warnings() {
+                    for warning in &result.warnings {
+                        tracing::warn!("Layout warning: {}", warning);
+                    }
+                }
+
+                // Create the renderer with the loaded layout
+                self.keyboard_renderer = Some(KeyboardRenderer::new(result.layout));
+                tracing::info!("Loaded keyboard layout from: {}", layout_path);
+            }
+            Err(e) => {
+                // Log the error and queue a toast notification
+                tracing::error!("Failed to load layout from {}: {}", layout_path, e);
+
+                // Create a renderer with an empty/error state is not possible,
+                // so we'll display the error message via toast when we have a renderer
+                // For now, set renderer to None and handle the missing renderer in view_window
+                self.keyboard_renderer = None;
+            }
+        }
+    }
+
+    /// Find the layout file path, checking multiple locations.
+    fn find_layout_path() -> String {
+        // Check various locations for the layout file
+        let candidates = [
+            DEFAULT_LAYOUT_PATH.to_string(),
+            format!("/usr/share/cosboard/layouts/example_qwerty.json"),
+            format!(
+                "{}/resources/layouts/example_qwerty.json",
+                std::env::current_dir()
+                    .map(|p| p.display().to_string())
+                    .unwrap_or_default()
+            ),
+        ];
+
+        for path in &candidates {
+            if std::path::Path::new(path).exists() {
+                return path.clone();
+            }
+        }
+
+        // Return default path even if it doesn't exist (will show error)
+        DEFAULT_LAYOUT_PATH.to_string()
+    }
+
+    /// Render the keyboard content using the renderer (Task 7.3).
+    fn render_keyboard_content(&self) -> Element<'_, Message> {
+        let surface_width = self.window_state.width;
+        let surface_height = self.window_state.height;
+        let scale = get_scale_factor();
+
+        if let Some(ref renderer) = self.keyboard_renderer {
+            // Render the keyboard panel using the renderer
+            let panel_element = render_animated_panels(renderer, surface_width, surface_height, scale);
+
+            // Get the current theme for toast rendering
+            let theme = Theme::dark(); // TODO: Get actual theme from COSMIC context
+
+            // Render toast if any
+            let toast_element = render_current_toast(renderer, &theme);
+
+            // Combine panel with toast area
+            let keyboard_with_toast = render_keyboard_with_toast(panel_element, toast_element, surface_height);
+
+            // Map RendererMessage to applet Message
+            keyboard_with_toast.map(|msg| match msg {
+                RendererMessage::KeyPressed(id) => Message::KeyPressed(id),
+                RendererMessage::KeyReleased(id) => Message::KeyReleased(id),
+                RendererMessage::SwitchPanel(id) => Message::SwitchPanel(id),
+                RendererMessage::AnimationTick => Message::AnimationTick,
+                RendererMessage::AnimationComplete => Message::AnimationTick, // Handled in update
+                RendererMessage::LongPressTimerTick => Message::LongPressTimerTick,
+                RendererMessage::PopupDismiss => Message::KeyReleased(String::new()),
+                RendererMessage::ShowToast(msg, severity) => Message::ShowToast(msg, severity),
+                RendererMessage::DismissToast => Message::DismissToast,
+                RendererMessage::ToastTimerTick => Message::ToastTimerTick,
+                RendererMessage::Noop => Message::Toggle, // Should not happen
+            })
+        } else {
+            // No renderer available - show error message
+            container(widget::text::body("Failed to load keyboard layout"))
+                .width(Length::Fill)
+                .height(Length::Fill)
+                .class(cosmic::style::Container::Background)
+                .into()
+        }
+    }
+
+    // ========================================================================
+    // Task Group 5: Key Press Event Flow Helpers
+    // ========================================================================
+
+    /// Finds a key by its identifier in the current panel.
+    ///
+    /// This searches through the current panel's rows and cells to find
+    /// a key with the matching identifier.
+    ///
+    /// # Arguments
+    ///
+    /// * `identifier` - The key identifier to search for
+    ///
+    /// # Returns
+    ///
+    /// * `Some(&Key)` if a key with the identifier was found
+    /// * `None` if no matching key was found
+    fn find_key_by_identifier(&self, identifier: &str) -> Option<&Key> {
+        let renderer = self.keyboard_renderer.as_ref()?;
+        let panel = renderer.current_panel()?;
+
+        for row in &panel.rows {
+            for cell in &row.cells {
+                if let Cell::Key(key) = cell {
+                    if key.identifier.as_deref() == Some(identifier) {
+                        return Some(key);
+                    }
+                }
+            }
+        }
+
+        None
+    }
+
+    /// Determines if a key is a modifier key based on its KeyCode.
+    ///
+    /// # Arguments
+    ///
+    /// * `code` - The KeyCode to check
+    ///
+    /// # Returns
+    ///
+    /// * `Some(Modifier)` if the key is a modifier
+    /// * `None` if the key is not a modifier
+    fn keycode_to_modifier(code: &KeyCode) -> Option<Modifier> {
+        match code {
+            KeyCode::Keysym(s) => {
+                let s_lower = s.to_lowercase();
+                if s_lower.contains("shift") {
+                    Some(Modifier::Shift)
+                } else if s_lower.contains("control") || s_lower.contains("ctrl") {
+                    Some(Modifier::Ctrl)
+                } else if s_lower.contains("alt") {
+                    Some(Modifier::Alt)
+                } else if s_lower.contains("super") || s_lower.contains("meta") {
+                    Some(Modifier::Super)
+                } else {
+                    None
+                }
+            }
+            KeyCode::Unicode(_) => None,
+        }
+    }
+
+    /// Gets the hardware keycode for a modifier.
+    ///
+    /// # Arguments
+    ///
+    /// * `modifier` - The modifier to get the keycode for
+    ///
+    /// # Returns
+    ///
+    /// The evdev keycode for the left variant of the modifier.
+    fn modifier_to_keycode(modifier: Modifier) -> u32 {
+        match modifier {
+            Modifier::Shift => keycodes::KEY_LEFTSHIFT,
+            Modifier::Ctrl => keycodes::KEY_LEFTCTRL,
+            Modifier::Alt => keycodes::KEY_LEFTALT,
+            Modifier::Super => keycodes::KEY_LEFTMETA,
+        }
+    }
+
+    /// Handles a regular (non-modifier) key press.
+    ///
+    /// This method:
+    /// 1. Gets active modifiers from the renderer
+    /// 2. Emits modifier key presses for active modifiers
+    /// 3. Emits the main key press
+    /// 4. Stores the pressed key for release handling
+    ///
+    /// # Arguments
+    ///
+    /// * `key` - The key definition
+    fn handle_regular_key_press(&mut self, key: &Key) {
+        if !self.virtual_keyboard.is_initialized() {
+            tracing::warn!("Virtual keyboard not initialized, cannot emit key press");
+            return;
+        }
+
+        // Get active modifiers
+        let active_modifiers = if let Some(ref renderer) = self.keyboard_renderer {
+            renderer.get_active_modifiers()
+        } else {
+            Vec::new()
+        };
+
+        // Emit modifier key presses first
+        for modifier in &active_modifiers {
+            let keycode = Self::modifier_to_keycode(*modifier);
+            self.virtual_keyboard.press_key(keycode);
+            tracing::debug!("Emitted modifier press: {:?} (keycode {})", modifier, keycode);
+        }
+
+        // Resolve and emit the main key
+        if let Some(resolved) = parse_keycode(&key.code) {
+            match &resolved {
+                ResolvedKeycode::Character(_) | ResolvedKeycode::Keysym(_) => {
+                    if let Some(keycode) = self.virtual_keyboard.resolve_keycode(&resolved) {
+                        self.virtual_keyboard.press_key(keycode);
+                        tracing::debug!("Emitted key press: {:?} (keycode {})", resolved, keycode);
+                    } else {
+                        // Fallback for Unicode characters
+                        if let ResolvedKeycode::Character(c) = resolved {
+                            tracing::debug!("Key not found in keymap, using Unicode fallback for '{}'", c);
+                            self.virtual_keyboard.emit_unicode_codepoint(c as u32);
+                        } else {
+                            tracing::warn!("Could not resolve keycode for: {:?}", resolved);
+                        }
+                    }
+                }
+                ResolvedKeycode::UnicodeCodepoint(codepoint) => {
+                    self.virtual_keyboard.emit_unicode_codepoint(*codepoint);
+                    tracing::debug!("Emitted Unicode codepoint: U+{:04X}", codepoint);
+                }
+            }
+        } else {
+            tracing::warn!("Could not parse keycode: {:?}", key.code);
+        }
+    }
+
+    /// Handles a regular (non-modifier) key release.
+    ///
+    /// This method:
+    /// 1. Emits the main key release
+    /// 2. Emits modifier key releases for any active modifiers
+    /// 3. Clears one-shot modifiers from the renderer state
+    ///
+    /// # Arguments
+    ///
+    /// * `key` - The key definition
+    fn handle_regular_key_release(&mut self, key: &Key) {
+        if !self.virtual_keyboard.is_initialized() {
+            return;
+        }
+
+        // Get active modifiers before clearing
+        let active_modifiers = if let Some(ref renderer) = self.keyboard_renderer {
+            renderer.get_active_modifiers()
+        } else {
+            Vec::new()
+        };
+
+        // Emit the main key release
+        if let Some(resolved) = parse_keycode(&key.code) {
+            match &resolved {
+                ResolvedKeycode::Character(_) | ResolvedKeycode::Keysym(_) => {
+                    if let Some(keycode) = self.virtual_keyboard.resolve_keycode(&resolved) {
+                        self.virtual_keyboard.release_key(keycode);
+                        tracing::debug!("Emitted key release: {:?} (keycode {})", resolved, keycode);
+                    }
+                }
+                ResolvedKeycode::UnicodeCodepoint(_) => {
+                    // Unicode codepoint emission handles press+release in emit_unicode_codepoint
+                }
+            }
+        }
+
+        // Emit modifier key releases
+        for modifier in &active_modifiers {
+            let keycode = Self::modifier_to_keycode(*modifier);
+            self.virtual_keyboard.release_key(keycode);
+            tracing::debug!("Emitted modifier release: {:?} (keycode {})", modifier, keycode);
+        }
+
+        // Clear one-shot modifiers from the renderer
+        if let Some(ref mut renderer) = self.keyboard_renderer {
+            renderer.clear_oneshot_modifiers();
+        }
+    }
+
+    /// Handles a modifier key press.
+    ///
+    /// This method activates the modifier in the renderer's modifier state
+    /// based on the key's sticky and stickyrelease fields.
+    ///
+    /// # Arguments
+    ///
+    /// * `key` - The key definition
+    /// * `modifier` - The modifier type
+    fn handle_modifier_key_press(&mut self, key: &Key, modifier: Modifier) {
+        if let Some(ref mut renderer) = self.keyboard_renderer {
+            if key.sticky {
+                // Sticky key: toggle behavior for toggle mode, activate for one-shot
+                if key.stickyrelease {
+                    // One-shot: activate and mark as sticky
+                    renderer.activate_modifier(modifier, true);
+                    if let Some(ref id) = key.identifier {
+                        renderer.sync_modifier_visual_state(modifier, id);
+                    }
+                    tracing::debug!("Activated one-shot modifier: {:?}", modifier);
+                } else {
+                    // Toggle mode: toggle the modifier state
+                    if renderer.is_modifier_active(modifier) {
+                        renderer.deactivate_modifier(modifier);
+                        if let Some(ref id) = key.identifier {
+                            renderer.sticky_keys_active.remove(id);
+                        }
+                        tracing::debug!("Deactivated toggle modifier: {:?}", modifier);
+                    } else {
+                        renderer.activate_modifier(modifier, false);
+                        if let Some(ref id) = key.identifier {
+                            renderer.sync_modifier_visual_state(modifier, id);
+                        }
+                        tracing::debug!("Activated toggle modifier: {:?}", modifier);
+                    }
+                }
+            } else {
+                // Hold mode: activate while held (will deactivate on release)
+                renderer.activate_modifier(modifier, false);
+                if let Some(ref id) = key.identifier {
+                    renderer.sync_modifier_visual_state(modifier, id);
+                }
+                tracing::debug!("Activated hold modifier: {:?}", modifier);
+            }
+        }
+    }
+
+    /// Handles a modifier key release.
+    ///
+    /// For hold mode modifiers, this deactivates the modifier.
+    /// For sticky modifiers, release is handled in `clear_oneshot_modifiers`.
+    ///
+    /// # Arguments
+    ///
+    /// * `key` - The key definition
+    /// * `modifier` - The modifier type
+    fn handle_modifier_key_release(&mut self, key: &Key, modifier: Modifier) {
+        if let Some(ref mut renderer) = self.keyboard_renderer {
+            if !key.sticky {
+                // Hold mode: deactivate on release
+                renderer.deactivate_modifier(modifier);
+                if let Some(ref id) = key.identifier {
+                    renderer.sticky_keys_active.remove(id);
+                }
+                tracing::debug!("Released hold modifier: {:?}", modifier);
+            }
+            // For sticky modifiers, the state persists until cleared by clear_oneshot_modifiers
+            // or toggled off by another press
+        }
     }
 }
 
@@ -275,21 +673,26 @@ impl cosmic::Application for AppletModel {
             last_preview_margin_right: 0,
             last_preview_margin_bottom: 0,
             last_preview_update: None,
+            keyboard_renderer: None,
+            virtual_keyboard: VirtualKeyboard::new(),
         };
         (applet, Task::none())
     }
 
-    /// Subscribe to events only when actively dragging or resizing.
+    /// Subscribe to events only when actively dragging or resizing (Task 7.5).
     ///
     /// Performance critical: Return `Subscription::none()` when idle to avoid
     /// processing all window events in the system. This is the key difference
     /// between responsive and laggy applets - the libcosmic example applet has
     /// no subscription at all when idle.
     fn subscription(&self) -> cosmic::iced_futures::Subscription<Self::Message> {
-        // ONLY subscribe when actively dragging or resizing
-        // When idle, return Subscription::none() for instant responsiveness
+        use cosmic::iced_futures::Subscription;
+
+        let mut subscriptions: Vec<Subscription<Message>> = Vec::new();
+
+        // Subscription for drag/resize mouse events
         if self.is_dragging || self.resize_edge.is_some() {
-            event::listen_with(|event, _, _id| match event {
+            subscriptions.push(event::listen_with(|event, _, _id| match event {
                 Event::Mouse(mouse_event) => match mouse_event {
                     mouse::Event::CursorMoved { position } => Some(Message::CursorMoved(position)),
                     mouse::Event::ButtonReleased(mouse::Button::Left) => {
@@ -299,11 +702,41 @@ impl cosmic::Application for AppletModel {
                     _ => None,
                 },
                 _ => None,
-            })
+            }));
+        }
+
+        // Renderer subscriptions (Task 7.5)
+        if let Some(ref renderer) = self.keyboard_renderer {
+            // Animation subscription - emit ticks during panel transitions
+            if renderer.is_animating() {
+                subscriptions.push(
+                    time::every(Duration::from_millis(ANIMATION_FRAME_INTERVAL_MS))
+                        .map(|_| Message::AnimationTick),
+                );
+            }
+
+            // Long press timer subscription
+            if renderer.has_pending_long_press() {
+                subscriptions.push(
+                    time::every(Duration::from_millis(LONG_PRESS_TIMER_INTERVAL_MS))
+                        .map(|_| Message::LongPressTimerTick),
+                );
+            }
+
+            // Toast timer subscription
+            if renderer.has_active_toast() {
+                subscriptions.push(
+                    time::every(Duration::from_millis(TOAST_TIMER_INTERVAL_MS))
+                        .map(|_| Message::ToastTimerTick),
+                );
+            }
+        }
+
+        // Return combined subscriptions or none
+        if subscriptions.is_empty() {
+            Subscription::none()
         } else {
-            // No subscription when idle - critical for responsiveness
-            // Window close events are handled via on_close_requested instead
-            cosmic::iced_futures::Subscription::none()
+            Subscription::batch(subscriptions)
         }
     }
 
@@ -320,7 +753,7 @@ impl cosmic::Application for AppletModel {
         }
     }
 
-    /// Handle messages emitted by the applet.
+    /// Handle messages emitted by the applet (Task 7.4, Task Group 5).
     fn update(&mut self, message: Message) -> Task<Self::Message> {
         match message {
             Message::Toggle => {
@@ -429,6 +862,17 @@ impl cosmic::Application for AppletModel {
                     return Task::none();
                 }
 
+                // Load the keyboard layout (Task 7.2)
+                self.load_keyboard_layout();
+
+                // Initialize virtual keyboard (Task Group 5)
+                if let Err(e) = self.virtual_keyboard.initialize() {
+                    tracing::error!("Failed to initialize virtual keyboard: {}", e);
+                    // Continue even if VK fails - keyboard will show but not emit events
+                } else {
+                    tracing::info!("Virtual keyboard initialized");
+                }
+
                 // Create layer surface for keyboard
                 let id = window::Id::unique();
                 let height = self.window_state.height as u32;
@@ -509,6 +953,12 @@ impl cosmic::Application for AppletModel {
                 // Save state before closing
                 self.save_state();
 
+                // Cleanup virtual keyboard (Task Group 5)
+                self.virtual_keyboard.cleanup();
+
+                // Clear the renderer (Task 7.1 - clear on layout unload)
+                self.keyboard_renderer = None;
+
                 self.keyboard_visible = false;
                 if let Some(id) = self.keyboard_surface.take() {
                     tracing::info!("Destroying keyboard layer surface: {:?}", id);
@@ -518,6 +968,8 @@ impl cosmic::Application for AppletModel {
             Message::Quit => {
                 // Save state before quitting
                 self.save_state();
+                // Cleanup virtual keyboard
+                self.virtual_keyboard.cleanup();
                 std::process::exit(0);
             }
             Message::PopupClosed(id) => {
@@ -534,6 +986,8 @@ impl cosmic::Application for AppletModel {
                 if self.keyboard_surface == Some(id) {
                     self.keyboard_surface = None;
                     self.keyboard_visible = false;
+                    self.keyboard_renderer = None; // Clear renderer
+                    self.virtual_keyboard.cleanup(); // Cleanup VK
                     tracing::info!("Keyboard layer surface closed: {:?}", id);
                 }
                 // Also check if this was the preview surface
@@ -873,6 +1327,132 @@ impl cosmic::Application for AppletModel {
                     tracing::debug!("Preview surface closed externally: {:?}", id);
                 }
             }
+            // ================================================================
+            // Renderer Message Handlers (Task 7.4, Task Group 5)
+            // ================================================================
+            Message::KeyPressed(identifier) => {
+                // First, update visual state in the renderer
+                if let Some(ref mut renderer) = self.keyboard_renderer {
+                    renderer.press_key(&identifier);
+                    tracing::debug!("Key pressed (visual): {}", identifier);
+                }
+
+                // Now handle input emission (Task Group 5)
+                // Clone the key data we need to avoid borrow issues
+                let key_info = self.find_key_by_identifier(&identifier).map(|key| {
+                    (
+                        key.code.clone(),
+                        key.sticky,
+                        key.stickyrelease,
+                        key.identifier.clone(),
+                    )
+                });
+
+                if let Some((code, sticky, stickyrelease, id)) = key_info {
+                    // Create a temporary Key struct with the needed fields
+                    let key = Key {
+                        code: code.clone(),
+                        sticky,
+                        stickyrelease,
+                        identifier: id,
+                        ..Key::default()
+                    };
+
+                    // Check if this is a modifier key
+                    if let Some(modifier) = Self::keycode_to_modifier(&code) {
+                        // Handle modifier key press
+                        self.handle_modifier_key_press(&key, modifier);
+                    } else {
+                        // Handle regular key press
+                        self.handle_regular_key_press(&key);
+                    }
+                }
+            }
+            Message::KeyReleased(identifier) => {
+                // First, update visual state in the renderer
+                if let Some(ref mut renderer) = self.keyboard_renderer {
+                    renderer.release_key(&identifier);
+                    tracing::debug!("Key released (visual): {}", identifier);
+                }
+
+                // Now handle input emission (Task Group 5)
+                // Clone the key data we need to avoid borrow issues
+                let key_info = self.find_key_by_identifier(&identifier).map(|key| {
+                    (
+                        key.code.clone(),
+                        key.sticky,
+                        key.stickyrelease,
+                        key.identifier.clone(),
+                    )
+                });
+
+                if let Some((code, sticky, stickyrelease, id)) = key_info {
+                    // Create a temporary Key struct with the needed fields
+                    let key = Key {
+                        code: code.clone(),
+                        sticky,
+                        stickyrelease,
+                        identifier: id,
+                        ..Key::default()
+                    };
+
+                    // Check if this is a modifier key
+                    if let Some(modifier) = Self::keycode_to_modifier(&code) {
+                        // Handle modifier key release
+                        self.handle_modifier_key_release(&key, modifier);
+                    } else {
+                        // Handle regular key release
+                        self.handle_regular_key_release(&key);
+                    }
+                }
+            }
+            Message::SwitchPanel(panel_id) => {
+                if let Some(ref mut renderer) = self.keyboard_renderer {
+                    // Use switch_panel_with_toast which handles errors with toasts
+                    let success = renderer.switch_panel_with_toast(&panel_id);
+                    if success {
+                        tracing::info!("Switching to panel: {}", panel_id);
+                    } else {
+                        tracing::warn!("Failed to switch to panel: {}", panel_id);
+                    }
+                }
+            }
+            Message::AnimationTick => {
+                if let Some(ref mut renderer) = self.keyboard_renderer {
+                    // Update animation progress
+                    let completed = renderer.update_animation();
+                    if completed {
+                        tracing::debug!("Panel animation completed");
+                    }
+                }
+            }
+            Message::LongPressTimerTick => {
+                if let Some(ref mut renderer) = self.keyboard_renderer {
+                    // Check if long press threshold has been exceeded
+                    if renderer.check_long_press_threshold() {
+                        tracing::debug!("Long press detected");
+                        // Long press popup handling would happen here
+                        // For now, we just log it
+                    }
+                }
+            }
+            Message::ShowToast(message, severity) => {
+                if let Some(ref mut renderer) = self.keyboard_renderer {
+                    renderer.queue_toast(message, severity);
+                }
+            }
+            Message::DismissToast => {
+                if let Some(ref mut renderer) = self.keyboard_renderer {
+                    renderer.dismiss_current_toast();
+                    renderer.show_next_toast();
+                }
+            }
+            Message::ToastTimerTick => {
+                if let Some(ref mut renderer) = self.keyboard_renderer {
+                    // Check for toast timeout and advance queue
+                    let _dismissed = renderer.handle_toast_timer_tick();
+                }
+            }
         }
         Task::none()
     }
@@ -901,14 +1481,11 @@ impl cosmic::Application for AppletModel {
         ))
     }
 
-    /// Handle views for additional windows (layer surfaces, popups).
+    /// Handle views for additional windows (layer surfaces, popups) (Task 7.3).
     fn view_window(&self, id: window::Id) -> Element<'_, Message> {
         if Some(id) == self.keyboard_surface {
-            // Keyboard layer surface content (placeholder - will add actual keyboard later)
-            let keyboard_content = container(widget::text::body("Keyboard (Layer Surface)"))
-                .width(Length::Fill)
-                .height(Length::Fill)
-                .class(cosmic::style::Container::Background);
+            // Render the keyboard content using the renderer
+            let keyboard_content = self.render_keyboard_content();
 
             if self.window_state.is_floating {
                 // In floating mode: use a grid-like layout for resize handles around content
@@ -921,7 +1498,7 @@ impl cosmic::Application for AppletModel {
                 // Top row: corner + top edge + corner
                 // Top-left corner with visible diagonal arrow
                 let top_left = mouse_area(
-                    container(widget::text::body("↖"))
+                    container(widget::text::body(""))
                         .width(RESIZE_ZONE_SIZE)
                         .height(RESIZE_ZONE_SIZE)
                         .class(cosmic::style::Container::Background),
@@ -947,13 +1524,14 @@ impl cosmic::Application for AppletModel {
                     .on_press(Message::ResizeStart(ResizeEdge::Left))
                     .interaction(mouse::Interaction::ResizingHorizontally);
 
-                let draggable_content = mouse_area(keyboard_content)
-                    .on_press(Message::DragStart)
-                    .interaction(mouse::Interaction::Grab);
+                // Wrap keyboard content in container (no drag on content - keys should be clickable)
+                let content_container = container(keyboard_content)
+                    .width(Length::Fill)
+                    .height(Length::Fill);
 
                 let middle_row = row::row()
                     .push(left_edge)
-                    .push(draggable_content)
+                    .push(content_container)
                     .height(Length::Fill);
 
                 // Bottom row: bottom-left corner + spacer + bottom-right corner
@@ -961,9 +1539,9 @@ impl cosmic::Application for AppletModel {
                     .on_press(Message::ResizeStart(ResizeEdge::BottomLeft))
                     .interaction(mouse::Interaction::ResizingDiagonallyUp);
 
-                // Bottom-right corner with visible diagonal arrow
+                // Bottom-right corner
                 let bottom_right = mouse_area(
-                    container(widget::text::body("↘"))
+                    container(widget::text::body(""))
                         .width(RESIZE_ZONE_SIZE)
                         .height(RESIZE_ZONE_SIZE)
                         .class(cosmic::style::Container::Background),
@@ -984,8 +1562,8 @@ impl cosmic::Application for AppletModel {
                     .height(Length::Fill)
                     .into()
             } else {
-                // Docked mode: no drag/resize
-                keyboard_content.into()
+                // Docked mode: no drag/resize handles, just the keyboard content
+                keyboard_content
             }
         } else if Some(id) == self.preview_surface {
             // Preview surface: semi-transparent outline showing future bounds
@@ -1129,6 +1707,18 @@ mod tests {
             applet.state_config.is_none(),
             "State config should be None in default"
         );
+
+        // Keyboard renderer should be None by default (Task 7.1)
+        assert!(
+            applet.keyboard_renderer.is_none(),
+            "Keyboard renderer should be None by default"
+        );
+
+        // Virtual keyboard should exist but not be initialized
+        assert!(
+            !applet.virtual_keyboard.is_initialized(),
+            "Virtual keyboard should not be initialized by default"
+        );
     }
 
     /// Test: Window state has sensible defaults
@@ -1215,5 +1805,317 @@ mod tests {
         assert!(matches!(resize_end, Message::ResizeEnd));
         assert!(matches!(cursor_moved, Message::CursorMoved(_)));
         assert!(matches!(toggle_mode, Message::ToggleFloatingMode));
+    }
+
+    /// Test: Renderer message variants exist (Task 7.4)
+    #[test]
+    fn test_renderer_message_variants() {
+        let key_pressed = Message::KeyPressed("key_a".to_string());
+        let key_released = Message::KeyReleased("key_a".to_string());
+        let switch_panel = Message::SwitchPanel("numpad".to_string());
+        let animation_tick = Message::AnimationTick;
+        let long_press_tick = Message::LongPressTimerTick;
+        let show_toast = Message::ShowToast("Error".to_string(), ToastSeverity::Error);
+        let dismiss_toast = Message::DismissToast;
+        let toast_tick = Message::ToastTimerTick;
+
+        assert!(matches!(key_pressed, Message::KeyPressed(_)));
+        assert!(matches!(key_released, Message::KeyReleased(_)));
+        assert!(matches!(switch_panel, Message::SwitchPanel(_)));
+        assert!(matches!(animation_tick, Message::AnimationTick));
+        assert!(matches!(long_press_tick, Message::LongPressTimerTick));
+        assert!(matches!(show_toast, Message::ShowToast(_, _)));
+        assert!(matches!(dismiss_toast, Message::DismissToast));
+        assert!(matches!(toast_tick, Message::ToastTimerTick));
+    }
+
+    // ========================================================================
+    // Task Group 5: Key Press Event Flow Tests (5.1)
+    // ========================================================================
+
+    /// Test 1: Regular key press emits correct keycode
+    ///
+    /// Verifies that pressing a regular (non-modifier) key triggers
+    /// the correct keycode emission flow.
+    #[test]
+    fn test_regular_key_press_emits_correct_keycode() {
+        // Create a key definition for 'a'
+        let key = Key {
+            label: "a".to_string(),
+            code: KeyCode::Unicode('a'),
+            identifier: Some("key_a".to_string()),
+            ..Key::default()
+        };
+
+        // Verify the keycode can be parsed
+        let resolved = parse_keycode(&key.code);
+        assert!(resolved.is_some(), "Should parse keycode for 'a'");
+        assert_eq!(resolved.unwrap(), ResolvedKeycode::Character('a'));
+
+        // Verify it's not a modifier
+        let modifier = AppletModel::keycode_to_modifier(&key.code);
+        assert!(modifier.is_none(), "'a' should not be a modifier key");
+    }
+
+    /// Test 2: Modifier key activates modifier state
+    ///
+    /// Verifies that pressing a modifier key (Shift, Ctrl, Alt, Super)
+    /// correctly activates the modifier state.
+    #[test]
+    fn test_modifier_key_activates_modifier_state() {
+        // Test Shift detection
+        let shift_code = KeyCode::Keysym("Shift_L".to_string());
+        let shift_modifier = AppletModel::keycode_to_modifier(&shift_code);
+        assert_eq!(shift_modifier, Some(Modifier::Shift), "Shift_L should be Shift modifier");
+
+        // Test Control detection
+        let ctrl_code = KeyCode::Keysym("Control_L".to_string());
+        let ctrl_modifier = AppletModel::keycode_to_modifier(&ctrl_code);
+        assert_eq!(ctrl_modifier, Some(Modifier::Ctrl), "Control_L should be Ctrl modifier");
+
+        // Test Alt detection
+        let alt_code = KeyCode::Keysym("Alt_L".to_string());
+        let alt_modifier = AppletModel::keycode_to_modifier(&alt_code);
+        assert_eq!(alt_modifier, Some(Modifier::Alt), "Alt_L should be Alt modifier");
+
+        // Test Super detection
+        let super_code = KeyCode::Keysym("Super_L".to_string());
+        let super_modifier = AppletModel::keycode_to_modifier(&super_code);
+        assert_eq!(super_modifier, Some(Modifier::Super), "Super_L should be Super modifier");
+
+        // Test Meta detection (should map to Super)
+        let meta_code = KeyCode::Keysym("Meta_L".to_string());
+        let meta_modifier = AppletModel::keycode_to_modifier(&meta_code);
+        assert_eq!(meta_modifier, Some(Modifier::Super), "Meta_L should be Super modifier");
+    }
+
+    /// Test 3: Combo key (modifier + regular) emits sequence
+    ///
+    /// Verifies that when a modifier is active and a regular key is pressed,
+    /// the correct sequence of modifier press + key press is emitted.
+    #[test]
+    fn test_combo_key_emits_sequence() {
+        use crate::layout::{Cell, Panel, Row, Layout, Sizing};
+        use std::collections::HashMap;
+
+        // Create a test layout with a Shift key and an 'a' key
+        let mut panels = HashMap::new();
+        panels.insert(
+            "main".to_string(),
+            Panel {
+                id: "main".to_string(),
+                rows: vec![Row {
+                    cells: vec![
+                        Cell::Key(Key {
+                            label: "Shift".to_string(),
+                            code: KeyCode::Keysym("Shift_L".to_string()),
+                            identifier: Some("shift".to_string()),
+                            sticky: true,
+                            stickyrelease: true, // one-shot
+                            ..Key::default()
+                        }),
+                        Cell::Key(Key {
+                            label: "a".to_string(),
+                            code: KeyCode::Unicode('a'),
+                            identifier: Some("key_a".to_string()),
+                            ..Key::default()
+                        }),
+                    ],
+                }],
+                ..Panel::default()
+            },
+        );
+
+        let layout = Layout {
+            name: "Test".to_string(),
+            version: "1.0".to_string(),
+            default_panel_id: "main".to_string(),
+            panels,
+            ..Layout::default()
+        };
+
+        // Create a renderer with this layout
+        let mut renderer = KeyboardRenderer::new(layout);
+
+        // Simulate pressing Shift (one-shot mode)
+        renderer.activate_modifier(Modifier::Shift, true);
+        assert!(renderer.is_modifier_active(Modifier::Shift), "Shift should be active");
+
+        // Now 'a' should be combined with Shift
+        let active_modifiers = renderer.get_active_modifiers();
+        assert_eq!(active_modifiers.len(), 1, "Should have 1 active modifier");
+        assert_eq!(active_modifiers[0], Modifier::Shift, "Active modifier should be Shift");
+
+        // Verify modifier keycode mapping
+        let shift_keycode = AppletModel::modifier_to_keycode(Modifier::Shift);
+        assert_eq!(shift_keycode, keycodes::KEY_LEFTSHIFT, "Shift should map to LEFT_SHIFT keycode");
+    }
+
+    /// Test 4: Sticky modifier clears after combo (stickyrelease: true)
+    ///
+    /// Verifies that one-shot modifiers (stickyrelease: true) are cleared
+    /// after the next regular key press.
+    #[test]
+    fn test_sticky_modifier_clears_after_combo() {
+        use crate::layout::{Layout, Panel, Row, Cell};
+        use std::collections::HashMap;
+
+        let mut panels = HashMap::new();
+        panels.insert("main".to_string(), Panel {
+            id: "main".to_string(),
+            rows: vec![Row { cells: vec![] }],
+            ..Panel::default()
+        });
+
+        let layout = Layout {
+            name: "Test".to_string(),
+            version: "1.0".to_string(),
+            default_panel_id: "main".to_string(),
+            panels,
+            ..Layout::default()
+        };
+
+        let mut renderer = KeyboardRenderer::new(layout);
+
+        // Activate Shift as one-shot (stickyrelease: true)
+        renderer.activate_modifier(Modifier::Shift, true);
+        assert!(renderer.is_modifier_active(Modifier::Shift), "Shift should be active");
+
+        // Simulate pressing a regular key and clearing one-shot modifiers
+        renderer.clear_oneshot_modifiers();
+
+        // Shift should now be inactive
+        assert!(!renderer.is_modifier_active(Modifier::Shift), "Shift should be cleared after combo");
+    }
+
+    /// Test 5: Toggle modifier persists after combo (stickyrelease: false)
+    ///
+    /// Verifies that toggle modifiers (stickyrelease: false) remain active
+    /// after regular key presses.
+    #[test]
+    fn test_toggle_modifier_persists_after_combo() {
+        use crate::layout::{Layout, Panel, Row};
+        use std::collections::HashMap;
+
+        let mut panels = HashMap::new();
+        panels.insert("main".to_string(), Panel {
+            id: "main".to_string(),
+            rows: vec![Row { cells: vec![] }],
+            ..Panel::default()
+        });
+
+        let layout = Layout {
+            name: "Test".to_string(),
+            version: "1.0".to_string(),
+            default_panel_id: "main".to_string(),
+            panels,
+            ..Layout::default()
+        };
+
+        let mut renderer = KeyboardRenderer::new(layout);
+
+        // Activate Ctrl as toggle (stickyrelease: false)
+        renderer.activate_modifier(Modifier::Ctrl, false);
+        assert!(renderer.is_modifier_active(Modifier::Ctrl), "Ctrl should be active");
+
+        // Simulate pressing a regular key and clearing one-shot modifiers
+        renderer.clear_oneshot_modifiers();
+
+        // Ctrl should still be active (toggle mode persists)
+        assert!(renderer.is_modifier_active(Modifier::Ctrl), "Ctrl should persist in toggle mode");
+
+        // Must explicitly deactivate
+        renderer.deactivate_modifier(Modifier::Ctrl);
+        assert!(!renderer.is_modifier_active(Modifier::Ctrl), "Ctrl should be inactive after deactivate");
+    }
+
+    /// Test 6: Hold modifier behavior
+    ///
+    /// Verifies that hold modifiers (sticky: false) are active only while
+    /// the key is held and deactivate on release.
+    #[test]
+    fn test_hold_modifier_behavior() {
+        use crate::layout::{Layout, Panel, Row};
+        use std::collections::HashMap;
+
+        let mut panels = HashMap::new();
+        panels.insert("main".to_string(), Panel {
+            id: "main".to_string(),
+            rows: vec![Row { cells: vec![] }],
+            ..Panel::default()
+        });
+
+        let layout = Layout {
+            name: "Test".to_string(),
+            version: "1.0".to_string(),
+            default_panel_id: "main".to_string(),
+            panels,
+            ..Layout::default()
+        };
+
+        let mut renderer = KeyboardRenderer::new(layout);
+
+        // Simulate holding Alt (non-sticky, so hold behavior)
+        // For hold mode, we activate when pressed
+        renderer.activate_modifier(Modifier::Alt, false);
+        assert!(renderer.is_modifier_active(Modifier::Alt), "Alt should be active while held");
+
+        // User presses a key while Alt is held
+        let active = renderer.get_active_modifiers();
+        assert!(active.contains(&Modifier::Alt), "Alt should be in active modifiers");
+
+        // User releases Alt - simulate by deactivating
+        renderer.deactivate_modifier(Modifier::Alt);
+        assert!(!renderer.is_modifier_active(Modifier::Alt), "Alt should be inactive after release");
+    }
+
+    /// Test: Modifier to keycode mapping is correct
+    #[test]
+    fn test_modifier_to_keycode_mapping() {
+        assert_eq!(
+            AppletModel::modifier_to_keycode(Modifier::Shift),
+            keycodes::KEY_LEFTSHIFT,
+            "Shift should map to KEY_LEFTSHIFT"
+        );
+        assert_eq!(
+            AppletModel::modifier_to_keycode(Modifier::Ctrl),
+            keycodes::KEY_LEFTCTRL,
+            "Ctrl should map to KEY_LEFTCTRL"
+        );
+        assert_eq!(
+            AppletModel::modifier_to_keycode(Modifier::Alt),
+            keycodes::KEY_LEFTALT,
+            "Alt should map to KEY_LEFTALT"
+        );
+        assert_eq!(
+            AppletModel::modifier_to_keycode(Modifier::Super),
+            keycodes::KEY_LEFTMETA,
+            "Super should map to KEY_LEFTMETA"
+        );
+    }
+
+    /// Test: keycode_to_modifier correctly identifies modifiers
+    #[test]
+    fn test_keycode_to_modifier_identification() {
+        // Test various keysym formats
+        let test_cases = vec![
+            (KeyCode::Keysym("Shift_L".to_string()), Some(Modifier::Shift)),
+            (KeyCode::Keysym("Shift_R".to_string()), Some(Modifier::Shift)),
+            (KeyCode::Keysym("Control_L".to_string()), Some(Modifier::Ctrl)),
+            (KeyCode::Keysym("Control_R".to_string()), Some(Modifier::Ctrl)),
+            (KeyCode::Keysym("Alt_L".to_string()), Some(Modifier::Alt)),
+            (KeyCode::Keysym("Alt_R".to_string()), Some(Modifier::Alt)),
+            (KeyCode::Keysym("Super_L".to_string()), Some(Modifier::Super)),
+            (KeyCode::Keysym("Super_R".to_string()), Some(Modifier::Super)),
+            (KeyCode::Keysym("Meta_L".to_string()), Some(Modifier::Super)),
+            (KeyCode::Unicode('a'), None),
+            (KeyCode::Keysym("Return".to_string()), None),
+            (KeyCode::Keysym("BackSpace".to_string()), None),
+        ];
+
+        for (code, expected) in test_cases {
+            let result = AppletModel::keycode_to_modifier(&code);
+            assert_eq!(result, expected, "Modifier detection failed for {:?}", code);
+        }
     }
 }
