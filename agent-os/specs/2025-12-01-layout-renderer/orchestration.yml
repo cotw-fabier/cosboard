@@ -1,0 +1,17 @@
+task_groups:
+  - name: Renderer State and Core Types
+    claude_code_subagent: implementer
+  - name: Sizing Calculations and Theme Integration
+    claude_code_subagent: implementer
+  - name: Key and Panel Rendering
+    claude_code_subagent: implementer
+  - name: Press States, Long Press, and Popups
+    claude_code_subagent: implementer
+  - name: Panel Transitions
+    claude_code_subagent: implementer
+  - name: Toast System and Error Display
+    claude_code_subagent: implementer
+  - name: Applet Integration and Testing
+    claude_code_subagent: implementer
+  - name: Test Review and Gap Analysis
+    claude_code_subagent: implementation-verifier
